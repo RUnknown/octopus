@@ -3,11 +3,15 @@ package sitesync
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 
+	"github.com/bestruirui/octopus/internal/apperror"
 	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
 )
@@ -120,6 +124,64 @@ func TestCreateAccountTokenCreatesManagedKeyAndSyncsAccount(t *testing.T) {
 	}
 }
 
+func TestCreateAccountTokenSucceedsWhenImmediateSyncCannotSeeCreatedKey(t *testing.T) {
+	ctx := setupProjectTestDB(t)
+	var created atomic.Bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case r.URL.Path == "/api/user/self":
+			_, _ = w.Write([]byte(`{"success":true,"data":{"id":11494,"username":"managed-user"}}`))
+		case r.URL.Path == "/api/token/" && r.Method == http.MethodPost:
+			created.Store(true)
+			_, _ = w.Write([]byte(`{"success":true,"data":{"id":1}}`))
+		case r.URL.Path == "/api/token/" && r.Method == http.MethodGet:
+			// New API can briefly return an empty list immediately after creation.
+			_, _ = w.Write([]byte(`{"data":{"items":[]}}`))
+		case r.URL.Path == "/api/user/self/groups":
+			_, _ = w.Write([]byte(`{"data":[{"id":"vip","name":"VIP"}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	site := &model.Site{
+		Name:     "managed-create-race-site",
+		Platform: model.SitePlatformNewAPI,
+		BaseURL:  server.URL,
+		Enabled:  true,
+	}
+	if err := op.SiteCreate(site, ctx); err != nil {
+		t.Fatalf("SiteCreate failed: %v", err)
+	}
+
+	account := &model.SiteAccount{
+		SiteID:         site.ID,
+		Name:           "managed-create-race-account",
+		CredentialType: model.SiteCredentialTypeAccessToken,
+		AccessToken:    "test-access-token",
+		Enabled:        true,
+		AutoSync:       true,
+	}
+	if err := op.SiteAccountCreate(account, ctx); err != nil {
+		t.Fatalf("SiteAccountCreate failed: %v", err)
+	}
+
+	result, err := CreateAccountToken(ctx, account.ID, model.SiteChannelKeyCreateRequest{GroupKey: "vip"})
+	if err != nil {
+		t.Fatalf("expected successful creation despite read-back race, got %v", err)
+	}
+	if !created.Load() {
+		t.Fatalf("expected upstream token creation to run")
+	}
+	if result != nil {
+		t.Fatalf("expected no sync result while the new key is not visible, got %+v", result)
+	}
+}
+
 func TestCreateAccountTokenCreatesSub2APIKeyAndSyncsAccount(t *testing.T) {
 	ctx := setupProjectTestDB(t)
 
@@ -224,5 +286,62 @@ func TestSiteTokenCreateSucceededFromAnyRequiresExplicitPrimitiveTrue(t *testing
 	}
 	if !siteTokenCreateSucceededFromAny(true) {
 		t.Fatalf("expected boolean true primitive to be successful")
+	}
+}
+
+func TestFinalizeCreatedAccountTokenSyncDowngradesRecoverableErrors(t *testing.T) {
+	result := &model.SiteSyncResult{AccountID: 42, Status: model.SiteExecutionStatusPartial}
+
+	got, err := finalizeCreatedAccountTokenSync(42, result, newMissingGroupKeyError("vip"))
+	if err != nil {
+		t.Fatalf("expected missing-group sync error to be deferred, got %v", err)
+	}
+	if got != result {
+		t.Fatalf("expected the partial sync result to be preserved")
+	}
+
+	got, err = finalizeCreatedAccountTokenSync(42, nil, &url.Error{
+		Op:  "Get",
+		URL: "https://example.com/api/token/",
+		Err: context.DeadlineExceeded,
+	})
+	if err != nil {
+		t.Fatalf("expected deadline sync error to be deferred, got %v", err)
+	}
+	if got != nil {
+		t.Fatalf("expected nil sync result to remain nil, got %+v", got)
+	}
+
+	got, err = finalizeCreatedAccountTokenSync(42, nil, newSiteHTTPError(http.StatusBadGateway, "temporary upstream failure"))
+	if err != nil {
+		t.Fatalf("expected transient upstream HTTP error to be deferred, got %v", err)
+	}
+	if got != nil {
+		t.Fatalf("expected nil sync result to remain nil, got %+v", got)
+	}
+}
+
+func TestFinalizeCreatedAccountTokenSyncPreservesPermanentErrors(t *testing.T) {
+	result := &model.SiteSyncResult{AccountID: 7}
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "authentication", err: apperror.New(CodeSiteAuthAccessTokenRequired, "access token is required")},
+		{name: "database", err: apperror.New(apperror.CodeCommonDatabaseError, "database unavailable")},
+		{name: "non-request deadline", err: context.DeadlineExceeded},
+		{name: "unauthorized upstream", err: newSiteHTTPError(http.StatusUnauthorized, "unauthorized")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := finalizeCreatedAccountTokenSync(7, result, tt.err)
+			if !errors.Is(err, tt.err) {
+				t.Fatalf("expected permanent sync error to be preserved, got %v", err)
+			}
+			if got != result {
+				t.Fatalf("expected result to be preserved with permanent error")
+			}
+		})
 	}
 }

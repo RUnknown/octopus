@@ -2,13 +2,17 @@ package sitesync
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/bestruirui/octopus/internal/apperror"
 	"github.com/bestruirui/octopus/internal/model"
+	"github.com/bestruirui/octopus/internal/utils/log"
 )
 
 func CreateAccountToken(ctx context.Context, accountID int, req model.SiteChannelKeyCreateRequest) (*model.SiteSyncResult, error) {
@@ -40,7 +44,54 @@ func CreateAccountToken(ctx context.Context, accountID int, req model.SiteChanne
 		return nil, fmt.Errorf("site platform %s does not support quick key creation", siteRecord.Platform)
 	}
 
-	return SyncAccount(ctx, accountID)
+	result, syncErr := SyncAccount(ctx, accountID)
+	return finalizeCreatedAccountTokenSync(accountID, result, syncErr)
+}
+
+// finalizeCreatedAccountTokenSync keeps a successful upstream key creation
+// successful even when the immediate read-back sync races with the upstream
+// or encounters a transient site failure. The next scheduled/manual sync can
+// populate the local account once the upstream is ready.
+func finalizeCreatedAccountTokenSync(accountID int, result *model.SiteSyncResult, syncErr error) (*model.SiteSyncResult, error) {
+	if syncErr == nil || !isRecoverablePostCreateSyncError(syncErr) {
+		return result, syncErr
+	}
+
+	log.Warnw(
+		"sitesync.create_key.sync_deferred",
+		"account", accountID,
+		"reason", string(siteBatchReason(syncErr)),
+		"message", sanitizeSiteStatusMessage(syncErr),
+	)
+	return result, nil
+}
+
+func isRecoverablePostCreateSyncError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	switch apperror.Code(err) {
+	case CodeSiteSyncMissingGroupKey,
+		CodeSiteSyncAllGroupsUnresolved,
+		CodeSiteSyncNoGroupResult,
+		CodeSiteUpstreamCloudflareChallenge:
+		return true
+	}
+
+	var requestErr *url.Error
+	if errors.As(err, &requestErr) && requestErr.Timeout() {
+		return true
+	}
+
+	// Temporary upstream statuses mean the key may already exist even though
+	// the follow-up read failed. Authentication and client errors are kept
+	// fatal by excluding 4xx statuses other than retryable 408/429.
+	if statusCode := siteErrorStatusCode(err); statusCode == http.StatusRequestTimeout ||
+		statusCode == http.StatusTooManyRequests || statusCode >= http.StatusInternalServerError {
+		return true
+	}
+	return false
 }
 
 func createManagementPlatformToken(ctx context.Context, siteRecord *model.Site, account *model.SiteAccount, groupKey string, name string) error {

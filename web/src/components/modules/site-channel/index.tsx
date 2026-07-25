@@ -1593,7 +1593,7 @@ function SiteAccountPanel({
             },
             {
                 onSuccess: () => {
-                    toast.success(`分组「${creatingGroup.group_name || creatingGroup.group_key}」已创建 Key 并完成同步`);
+                    toast.success(`分组「${creatingGroup.group_name || creatingGroup.group_key}」已创建 Key 并尝试同步；若上游尚未生效，请稍后再次同步`);
                     setCreatingGroup(null);
                     setQuickCreateName('');
                 },

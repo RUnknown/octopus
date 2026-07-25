@@ -235,7 +235,10 @@ export function buildSiteTokenManagementUrl(baseUrl: string, platform: SiteChann
 
     const normalizedBase = trimmed.replace(/\/+$/, '');
     if (platform !== 'new-api') return normalizedBase;
-    return `${normalizedBase}/console/token`;
+    // Current New API exposes the key-management page at /keys. Older
+    // releases may redirect the legacy /console/token route, but /keys is the
+    // canonical route in the current frontend and avoids a stale legacy path.
+    return `${normalizedBase}/keys`;
 }
 
 export function collectPendingCompletionSites(cards: SiteChannelCard[]): PendingCompletionSite[] {
