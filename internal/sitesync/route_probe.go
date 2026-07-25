@@ -415,7 +415,7 @@ func inferHeuristicEndpointTypes(modelName string, supportedEndpointTypes []stri
 	if !shouldHeuristicallyAddOpenAIResponse(modelName) {
 		return nil
 	}
-	if explicitSupportsResponse(supportedEndpointTypes) {
+	if explicitSupportsResponse(supportedEndpointTypes) || explicitSupportsImages(supportedEndpointTypes) {
 		return nil
 	}
 	return []string{"/v1/responses"}
@@ -429,6 +429,15 @@ func shouldHeuristicallyAddOpenAIResponse(modelName string) bool {
 func explicitSupportsResponse(supportedEndpointTypes []string) bool {
 	for _, endpointType := range supportedEndpointTypes {
 		if routeType, ok := mapSupportedEndpointType(endpointType); ok && routeType == model.SiteModelRouteTypeOpenAIResponse {
+			return true
+		}
+	}
+	return false
+}
+
+func explicitSupportsImages(supportedEndpointTypes []string) bool {
+	for _, endpointType := range supportedEndpointTypes {
+		if routeType, ok := mapSupportedEndpointType(endpointType); ok && routeType == model.SiteModelRouteTypeOpenAIImage {
 			return true
 		}
 	}
@@ -479,6 +488,7 @@ func pickPreferredDetectedRouteType(modelName string, values []model.SiteModelRo
 	case model.SiteModelRouteTypeAnthropic,
 		model.SiteModelRouteTypeGemini,
 		model.SiteModelRouteTypeVolcengine,
+		model.SiteModelRouteTypeOpenAIImage,
 		model.SiteModelRouteTypeOpenAIEmbedding:
 		for _, value := range values {
 			if value == nativeRouteType {
@@ -490,6 +500,7 @@ func pickPreferredDetectedRouteType(modelName string, values []model.SiteModelRo
 	fallbackOrder := []model.SiteModelRouteType{
 		model.SiteModelRouteTypeAnthropic,
 		model.SiteModelRouteTypeOpenAIResponse,
+		model.SiteModelRouteTypeOpenAIImage,
 		model.SiteModelRouteTypeOpenAIChat,
 		model.SiteModelRouteTypeGemini,
 		model.SiteModelRouteTypeVolcengine,
@@ -512,14 +523,16 @@ func detectedRouteTypePriority(routeType model.SiteModelRouteType) int {
 		return 0
 	case model.SiteModelRouteTypeOpenAIResponse:
 		return 1
-	case model.SiteModelRouteTypeAnthropic:
+	case model.SiteModelRouteTypeOpenAIImage:
 		return 2
-	case model.SiteModelRouteTypeGemini:
+	case model.SiteModelRouteTypeAnthropic:
 		return 3
-	case model.SiteModelRouteTypeVolcengine:
+	case model.SiteModelRouteTypeGemini:
 		return 4
-	case model.SiteModelRouteTypeOpenAIChat:
+	case model.SiteModelRouteTypeVolcengine:
 		return 5
+	case model.SiteModelRouteTypeOpenAIChat:
+		return 6
 	default:
 		return 99
 	}
@@ -537,6 +550,8 @@ func mapSupportedEndpointType(value string) (model.SiteModelRouteType, bool) {
 		normalized == "openai/embeddings",
 		strings.Contains(normalized, "/v1/embeddings"):
 		return model.SiteModelRouteTypeOpenAIEmbedding, true
+	case isOpenAIImagesEndpointType(normalized):
+		return model.SiteModelRouteTypeOpenAIImage, true
 	case normalized == "responses",
 		normalized == "response",
 		normalized == "openai/responses",
@@ -569,6 +584,27 @@ func mapSupportedEndpointType(value string) (model.SiteModelRouteType, bool) {
 		return model.SiteModelRouteTypeOpenAIChat, true
 	default:
 		return "", false
+	}
+}
+
+func isOpenAIImagesEndpointType(value string) bool {
+	switch value {
+	case "image",
+		"images",
+		"image_generation",
+		"image_generations",
+		"images/generations",
+		"images/edits",
+		"images/variations",
+		"openai_image",
+		"openai/image_generation",
+		"openai/images":
+		return true
+	default:
+		return strings.HasSuffix(value, "/images") ||
+			strings.Contains(value, "/images/generations") ||
+			strings.Contains(value, "/images/edits") ||
+			strings.Contains(value, "/images/variations")
 	}
 }
 

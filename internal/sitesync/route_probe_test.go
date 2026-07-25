@@ -43,6 +43,12 @@ func TestPickPreferredDetectedRouteType(t *testing.T) {
 			values:    []model.SiteModelRouteType{model.SiteModelRouteTypeOpenAIChat, model.SiteModelRouteTypeOpenAIResponse},
 			expected:  model.SiteModelRouteTypeOpenAIResponse,
 		},
+		{
+			name:      "image model prefers images route when reported",
+			modelName: "gpt-image-2",
+			values:    []model.SiteModelRouteType{model.SiteModelRouteTypeOpenAIChat, model.SiteModelRouteTypeOpenAIImage},
+			expected:  model.SiteModelRouteTypeOpenAIImage,
+		},
 	}
 
 	for _, tt := range tests {
@@ -81,6 +87,71 @@ func TestBuildSiteModelRouteDetectionAddsHeuristicResponsesForGPT5(t *testing.T)
 	}
 	if len(metadata.NormalizedEndpointTypes) != 2 {
 		t.Fatalf("expected normalized endpoint list to include explicit and heuristic routes, got %#v", metadata.NormalizedEndpointTypes)
+	}
+}
+
+func TestMapSupportedEndpointTypeRecognizesOpenAIImages(t *testing.T) {
+	for _, endpointType := range []string{
+		"/v1/images/generations",
+		"/v1/images",
+		"/v1/images/edits",
+		"images/generations",
+		"openai/images",
+	} {
+		routeType, ok := mapSupportedEndpointType(endpointType)
+		if !ok || routeType != model.SiteModelRouteTypeOpenAIImage {
+			t.Fatalf("expected %q to map to OpenAI Images, got route=%q ok=%v", endpointType, routeType, ok)
+		}
+	}
+}
+
+func TestBuildSiteModelRouteDetectionRecognizesOpenAIImages(t *testing.T) {
+	detection, ok := buildSiteModelRouteDetection(
+		"gpt-image-2",
+		nil,
+		[]string{"/v1/images/generations"},
+		"/api/pricing",
+		map[string]struct{}{"gpt-image-2": {}},
+	)
+	if !ok {
+		t.Fatalf("expected images route detection to be produced")
+	}
+	if detection.RouteType != model.SiteModelRouteTypeOpenAIImage {
+		t.Fatalf("expected images route type %q, got %q", model.SiteModelRouteTypeOpenAIImage, detection.RouteType)
+	}
+
+	metadata, ok := model.ParseSiteModelRouteMetadata(detection.RouteRawPayload)
+	if !ok {
+		t.Fatalf("expected images route metadata to parse")
+	}
+	if !metadata.RouteSupported || metadata.RouteGuessed {
+		t.Fatalf("expected explicit images metadata to be supported without a guess: %#v", metadata)
+	}
+	if len(metadata.NormalizedEndpointTypes) != 1 || metadata.NormalizedEndpointTypes[0] != string(model.SiteModelRouteTypeOpenAIImage) {
+		t.Fatalf("expected normalized images route metadata, got %#v", metadata.NormalizedEndpointTypes)
+	}
+}
+
+func TestBuildSiteModelRouteDetectionDoesNotInjectResponsesForExplicitImages(t *testing.T) {
+	detection, ok := buildSiteModelRouteDetection(
+		"gpt-5-image",
+		nil,
+		[]string{"/v1/images/generations"},
+		"/api/pricing",
+		nil,
+	)
+	if !ok {
+		t.Fatalf("expected explicit images route detection to be produced")
+	}
+	metadata, ok := model.ParseSiteModelRouteMetadata(detection.RouteRawPayload)
+	if !ok {
+		t.Fatalf("expected route metadata to parse")
+	}
+	if metadata.RouteType != model.SiteModelRouteTypeOpenAIImage {
+		t.Fatalf("expected images route type, got %q", metadata.RouteType)
+	}
+	if len(metadata.HeuristicEndpointTypes) != 0 {
+		t.Fatalf("expected no response heuristic for explicit images route, got %#v", metadata.HeuristicEndpointTypes)
 	}
 }
 

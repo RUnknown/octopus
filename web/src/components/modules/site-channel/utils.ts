@@ -87,6 +87,8 @@ export function routeTypeLabel(routeType: SiteModelRouteType) {
             return '未识别端点';
         case 'openai_response':
             return 'OpenAI Response';
+        case 'openai_image':
+            return 'OpenAI Images';
         case 'anthropic':
             return 'Anthropic';
         case 'gemini':

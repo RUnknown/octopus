@@ -8,6 +8,7 @@ export type SiteModelRouteType =
     | 'unknown'
     | 'openai_chat'
     | 'openai_response'
+    | 'openai_image'
     | 'anthropic'
     | 'gemini'
     | 'volcengine'
@@ -187,6 +188,7 @@ const SITE_MODEL_ROUTE_TYPES = new Set<SiteModelRouteType>([
     'unknown',
     'openai_chat',
     'openai_response',
+    'openai_image',
     'anthropic',
     'gemini',
     'volcengine',

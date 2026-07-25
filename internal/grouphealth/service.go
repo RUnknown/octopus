@@ -173,6 +173,7 @@ func (s *Service) RunGroupHealth(ctx context.Context, groupID int, probeModes ..
 	firstSuccessIndex := -1
 	attemptedCount := 0
 	successCount := 0
+	skippedCount := 0
 
 	for index, item := range items {
 		channel, err := op.ChannelGet(item.ChannelID, ctx)
@@ -195,6 +196,7 @@ func (s *Service) RunGroupHealth(ctx context.Context, groupID int, probeModes ..
 		}
 
 		if channel.SkipHealthProbe {
+			skippedCount++
 			if appendErr := s.repo.AppendAttempt(ctx, snapshot.ID, model.GroupHealthAttempt{
 				GroupItemID: item.ID, ChannelID: item.ChannelID, ChannelName: channel.Name,
 				ModelName: item.ModelName, Priority: item.Priority, Weight: item.Weight,
@@ -282,6 +284,9 @@ func (s *Service) RunGroupHealth(ctx context.Context, groupID int, probeModes ..
 	finalStatus := model.GroupHealthStatusFailed
 	if !successFound && len(items) == 0 {
 		message = "group has no items"
+	} else if !successFound && attemptedCount == 0 && skippedCount > 0 {
+		finalStatus = model.GroupHealthStatusPartial
+		message = fmt.Sprintf("all %d candidates skipped (health probe disabled)", skippedCount)
 	} else if successFound {
 		successChannelName := resolveChannelName(ctx, items[firstSuccessIndex].ChannelID)
 		switch {
@@ -291,6 +296,9 @@ func (s *Service) RunGroupHealth(ctx context.Context, groupID int, probeModes ..
 		case stopAfterSuccess:
 			finalStatus = model.GroupHealthStatusPartial
 			message = fmt.Sprintf("candidate %s succeeded after failover", successChannelName)
+		case skippedCount > 0 && successCount == attemptedCount:
+			finalStatus = model.GroupHealthStatusPartial
+			message = fmt.Sprintf("%d/%d candidates succeeded; %d skipped", successCount, attemptedCount, skippedCount)
 		case successCount == attemptedCount:
 			finalStatus = model.GroupHealthStatusSuccess
 			message = fmt.Sprintf("all %d candidates succeeded", successCount)

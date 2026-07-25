@@ -901,7 +901,7 @@ func TestSyncManagementPlatformAppliesPricingRouteMetadata(t *testing.T) {
 		case r.URL.Path == "/api/user/self/groups":
 			_, _ = w.Write([]byte(`{"data":[{"id":"default","name":"default"}]}`))
 		case r.URL.Path == "/v1/models":
-			_, _ = w.Write([]byte(`{"data":[{"id":"gpt-4o-mini"},{"id":"text-embedding-3-large"},{"id":"vendor-embedding-x"}]}`))
+			_, _ = w.Write([]byte(`{"data":[{"id":"gpt-4o-mini"},{"id":"gpt-image-2"},{"id":"text-embedding-3-large"},{"id":"vendor-embedding-x"}]}`))
 		case r.URL.Path == "/api/pricing":
 			if r.Header.Get("Authorization") != "Bearer test-access-token" || r.Header.Get("New-API-User") != "7788" {
 				w.WriteHeader(http.StatusUnauthorized)
@@ -909,8 +909,9 @@ func TestSyncManagementPlatformAppliesPricingRouteMetadata(t *testing.T) {
 				return
 			}
 			_, _ = w.Write([]byte(`{"data":[
-				{"model_name":"gpt-4o-mini","supported_endpoint_types":["/v1/responses","/v1/chat/completions"]},
-				{"model_name":"text-embedding-3-large","supported_endpoint_types":["/v1/embeddings"]},
+					{"model_name":"gpt-4o-mini","supported_endpoint_types":["/v1/responses","/v1/chat/completions"]},
+					{"model_name":"gpt-image-2","supported_endpoint_types":["/v1/images/generations"]},
+					{"model_name":"text-embedding-3-large","supported_endpoint_types":["/v1/embeddings"]},
 				{"model_name":"vendor-embedding-x","supported_endpoint_types":["/vendor/embeddings"]}
 			]}`))
 		case r.URL.Path == "/api/user/self":
@@ -943,6 +944,13 @@ func TestSyncManagementPlatformAppliesPricingRouteMetadata(t *testing.T) {
 
 	if routeByModel["gpt-4o-mini"].RouteType != model.SiteModelRouteTypeOpenAIResponse {
 		t.Fatalf("expected gpt-4o-mini route type %q, got %q", model.SiteModelRouteTypeOpenAIResponse, routeByModel["gpt-4o-mini"].RouteType)
+	}
+	if routeByModel["gpt-image-2"].RouteType != model.SiteModelRouteTypeOpenAIImage {
+		t.Fatalf("expected gpt-image-2 route type %q, got %q", model.SiteModelRouteTypeOpenAIImage, routeByModel["gpt-image-2"].RouteType)
+	}
+	imageMetadata, ok := model.ParseSiteModelRouteMetadata(routeByModel["gpt-image-2"].RouteRawPayload)
+	if !ok || !imageMetadata.RouteSupported || imageMetadata.RouteGuessed {
+		t.Fatalf("expected explicit images route metadata, got %#v", imageMetadata)
 	}
 	if routeByModel["text-embedding-3-large"].RouteType != model.SiteModelRouteTypeOpenAIEmbedding {
 		t.Fatalf("expected text-embedding-3-large route type %q, got %q", model.SiteModelRouteTypeOpenAIEmbedding, routeByModel["text-embedding-3-large"].RouteType)

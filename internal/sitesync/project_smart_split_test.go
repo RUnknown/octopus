@@ -59,6 +59,20 @@ func TestShouldSplitForAccount(t *testing.T) {
 			reason:   "所有模型都是自动推断的同一类型，不需要拆分",
 		},
 		{
+			name: "API platform with auto-detected Images model - split",
+			site: &model.Site{
+				Platform: model.SitePlatformAPI,
+			},
+			account: &model.SiteAccount{
+				Models: []model.SiteModel{
+					{ModelName: "gpt-4o", RouteType: model.SiteModelRouteTypeOpenAIChat, Disabled: false},
+					{ModelName: "gpt-image-2", RouteType: model.SiteModelRouteTypeOpenAIImage, Disabled: false},
+				},
+			},
+			expected: true,
+			reason:   "Images 模型即使复用 OpenAI channel type 也必须独立拆分",
+		},
+		{
 			name: "API platform with single manual override route type - no split",
 			site: &model.Site{
 				Platform: model.SitePlatformAPI,

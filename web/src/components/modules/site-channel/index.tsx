@@ -591,6 +591,7 @@ function collectSiteRuntimeSummary(card: SiteChannelCard) {
 const SHORT_ROUTE_LABEL: Partial<Record<SiteModelRouteType, string>> = {
     openai_chat: 'Chat',
     openai_response: 'Response',
+    openai_image: 'Images',
     openai_embedding: 'Embedding',
 };
 

@@ -179,7 +179,7 @@ func buildSiteChannelCardWithHistories(ctx context.Context, site model.Site, his
 }
 
 func buildSiteChannelGroups(ctx context.Context, site model.Site, account model.SiteAccount, historyMap map[string]*model.SiteModelHistorySummary) []model.SiteChannelGroup {
-	split := siteChannelShouldSplitByOutboundType(site)
+	split := siteChannelShouldSplitByOutboundType(site, account)
 	groups := make(map[string]*model.SiteChannelGroup)
 	projectedChannels := make(map[int]*model.Channel)
 	for _, group := range account.UserGroups {
@@ -791,8 +791,19 @@ func summarizeSiteRoutes(groups []model.SiteChannelGroup) []model.SiteRouteSumma
 	return result
 }
 
-func siteChannelShouldSplitByOutboundType(site model.Site) bool {
-	return model.ShouldSplitSiteChannelRoutes(site.Platform)
+func siteChannelShouldSplitByOutboundType(site model.Site, account model.SiteAccount) bool {
+	if model.ShouldSplitSiteChannelRoutes(site.Platform) {
+		return true
+	}
+	for _, item := range account.Models {
+		if item.Disabled {
+			continue
+		}
+		if model.NormalizeSiteModelRouteType(item.RouteType) == model.SiteModelRouteTypeOpenAIImage {
+			return true
+		}
+	}
+	return false
 }
 
 func siteChannelCompositeBindingKey(groupKey string, routeType model.SiteModelRouteType, split bool) string {
