@@ -16,7 +16,8 @@ import (
 func init() {
 	router.NewGroupRouter("/api/v1/runtime").
 		Use(middleware.Auth()).
-		AddRoute(router.NewRoute("/overview", http.MethodGet).Handle(getRuntimeOverview))
+		AddRoute(router.NewRoute("/overview", http.MethodGet).Handle(getRuntimeOverview)).
+		AddRoute(router.NewRoute("/clear", http.MethodDelete).Handle(clearRuntimeOverview))
 }
 
 type runtimeCircuitView struct {
@@ -135,6 +136,12 @@ func getRuntimeOverview(c *gin.Context) {
 		UnhealthyCount:   unhealthyCount,
 		HealthWindow:     windowLabel,
 	})
+}
+
+func clearRuntimeOverview(c *gin.Context) {
+	balancer.ClearCircuitBreakers()
+	op.StatsChannelRecentClear()
+	resp.Success(c, nil)
 }
 
 func circuitStateRank(state string) int {

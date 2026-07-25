@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../client';
 
 export type RuntimeCircuit = {
@@ -38,5 +38,15 @@ export function useRuntimeOverview(enabled = true) {
         queryFn: async () => apiClient.get<RuntimeOverview>('/api/v1/runtime/overview'),
         enabled,
         refetchInterval: 15000,
+    });
+}
+
+export function useClearRuntimeOverview() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async () => apiClient.delete<null>('/api/v1/runtime/clear'),
+        onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: ['runtime', 'overview'] });
+        },
     });
 }

@@ -172,6 +172,13 @@ function getHeadlineInputTokens(log: RelayLog) {
     return Math.max(0, dedupedInput + cacheWrite);
 }
 
+function getCacheHitRate(log: RelayLog) {
+    const cacheRead = Math.max(0, log.cache_read_tokens ?? 0);
+    // Headline input excludes cache reads across protocols; add them back for the total-input denominator.
+    const totalInput = getHeadlineInputTokens(log) + cacheRead;
+    return totalInput > 0 ? Math.min(100, (cacheRead / totalInput) * 100) : 0;
+}
+
 function getWSBadgeMeta(mode: RelayLogWSMode | null | undefined, usedWS: boolean | undefined, t: ReturnType<typeof useTranslations<'log.card'>>) {
     if (!usedWS && !mode) return null;
 
@@ -542,6 +549,7 @@ export function LogCard({ log, siteTargets }: { log: RelayLog; siteTargets: LogS
     const hasError = !log.processing && !!log.error;
     const hasAttempts = (log.attempts?.length ?? 0) > 0;
     const hasMultipleAttempts = (log.attempts?.length ?? 0) > 1;
+    const cacheHitRate = getCacheHitRate(log);
     const [isDiagnosticExpanded, setIsDiagnosticExpanded] = useState(false);
     const [confirmDisableOpen, setConfirmDisableOpen] = useState(false);
     const [activeDisableTarget, setActiveDisableTarget] = useState<LogSiteActionTarget | null>(null);
@@ -685,13 +693,13 @@ export function LogCard({ log, siteTargets }: { log: RelayLog; siteTargets: LogS
                                 </div>
                                 <WSModeBadge log={log} />
                             </div>
-                            <div className="grid grid-cols-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1fr)] gap-x-4 gap-y-2 text-xs tabular-nums text-muted-foreground">
+                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,0.85fr)_minmax(0,1.05fr)_minmax(0,1.55fr)_minmax(0,1.2fr)_minmax(0,1fr)] gap-x-4 gap-y-2 text-xs tabular-nums text-muted-foreground">
                                 <div className="flex items-center gap-1.5">
                                     <Clock className="size-3.5 shrink-0" style={{ color: brandColor }} />
                                     <span>{formatTime(log.time)}</span>
                                 </div>
                                 {requestAPIKeyName ? (
-                                    <div className="flex items-center gap-1.5">
+                                    <div className="flex min-w-0 items-center gap-1.5">
                                         <KeyRound className="size-3.5 shrink-0 text-orange-500" />
                                         <span className="truncate" title={requestAPIKeyName}>
                                             {requestAPIKeyName}
@@ -702,18 +710,33 @@ export function LogCard({ log, siteTargets }: { log: RelayLog; siteTargets: LogS
                                     <Zap className="size-3.5 shrink-0 text-amber-500" />
                                     <span>{t('duration')} {formatDurationCompact(log.ftut)} / {formatDurationCompact(log.use_time)}</span>
                                 </div>
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex min-w-0 items-center gap-1.5">
                                     <ArrowDownToLine className={cn('size-3.5 shrink-0', hasCacheTokens(log) ? 'text-sky-500' : 'text-green-500')} />
-                                    <span className="flex items-center gap-1">
+                                    <span className="flex min-w-0 items-center gap-1 whitespace-nowrap">
                                         {t('input')}
                                         <span className="tabular-nums">{getHeadlineInputTokens(log).toLocaleString()}</span>
                                         {hasCacheTokens(log) && log.cache_read_tokens != null && log.cache_read_tokens > 0 ? (
-                                            <Badge
-                                                variant="secondary"
-                                                className="shrink-0 px-1.5 py-0 text-[11px] bg-sky-500/15 text-sky-600 dark:text-sky-400"
-                                            >
-                                                {formatCompactTokenCount(log.cache_read_tokens)}
-                                            </Badge>
+                                            <>
+                                                <Badge
+                                                    variant="secondary"
+                                                    className="shrink-0 px-1.5 py-0 text-[11px] bg-sky-500/15 text-sky-600 dark:text-sky-400"
+                                                    title={t('cacheRead')}
+                                                >
+                                                    {formatCompactTokenCount(log.cache_read_tokens)}
+                                                </Badge>
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <Badge
+                                                            variant="secondary"
+                                                            className="shrink-0 cursor-help px-1.5 py-0 text-[11px] bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                                                            aria-label={`${t('cacheHitRate')} ${cacheHitRate.toFixed(1)}%`}
+                                                        >
+                                                            {cacheHitRate.toFixed(1)}%
+                                                        </Badge>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>{t('cacheHitRate')}</TooltipContent>
+                                                </Tooltip>
+                                            </>
                                         ) : null}
                                     </span>
                                 </div>

@@ -1,9 +1,22 @@
 'use client';
 
-import { useRuntimeOverview } from '@/api/endpoints/runtime';
+import { useState } from 'react';
+import { useClearRuntimeOverview, useRuntimeOverview } from '@/api/endpoints/runtime';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { toast } from '@/components/common/Toast';
 import { cn } from '@/lib/utils';
-import { Activity, ShieldAlert, TrendingDown } from 'lucide-react';
+import { Activity, Loader2, ShieldAlert, Trash2, TrendingDown } from 'lucide-react';
 
 function stateLabel(state: string) {
     if (state === 'open') return '熔断中';
@@ -26,6 +39,8 @@ function failRateClass(rate: number) {
 
 export function RuntimeCircuitStrip() {
     const { data, isLoading, error } = useRuntimeOverview();
+    const clearRuntime = useClearRuntimeOverview();
+    const [clearOpen, setClearOpen] = useState(false);
     if ((isLoading && !data) || error) return null;
 
     const circuits = data?.circuits ?? [];
@@ -55,6 +70,17 @@ export function RuntimeCircuitStrip() {
                         高失败 {unhealthy}
                     </Badge>
                 ) : null}
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="ml-auto h-7 rounded-lg px-2 text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => setClearOpen(true)}
+                    disabled={clearRuntime.isPending}
+                >
+                    {clearRuntime.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+                    清空
+                </Button>
             </div>
 
             {circuits.length > 0 ? (
@@ -102,6 +128,35 @@ export function RuntimeCircuitStrip() {
                     </div>
                 </div>
             ) : null}
+
+            <AlertDialog open={clearOpen} onOpenChange={(openState) => {
+                if (!clearRuntime.isPending) setClearOpen(openState);
+            }}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>清空运行态？</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            将清除当前熔断器状态和近 1 小时渠道失败率样本。请求日志、统计汇总和渠道配置不会受到影响，后续请求会重新累积运行态数据。
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={clearRuntime.isPending}>取消</AlertDialogCancel>
+                        <AlertDialogAction
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            disabled={clearRuntime.isPending}
+                            onClick={() => clearRuntime.mutate(undefined, {
+                                onSuccess: () => {
+                                    setClearOpen(false);
+                                    toast.success('运行态已清空');
+                                },
+                                onError: (mutationError) => toast.error('清空运行态失败', { description: mutationError.message }),
+                            })}
+                        >
+                            {clearRuntime.isPending ? '清空中...' : '确认清空'}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }

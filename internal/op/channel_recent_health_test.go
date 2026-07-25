@@ -31,3 +31,16 @@ func TestStatsChannelRecentSnapshotWindow(t *testing.T) {
 		t.Fatalf("unexpected snapshot: %+v", found)
 	}
 }
+
+func TestStatsChannelRecentClear(t *testing.T) {
+	StatsChannelRecentClear()
+	t.Cleanup(StatsChannelRecentClear)
+	StatsChannelRecentRecord(910001, true)
+	StatsChannelRecentRecord(910002, false)
+
+	StatsChannelRecentClear()
+
+	if snapshot := StatsChannelRecentSnapshot(time.Hour); len(snapshot) != 0 {
+		t.Fatalf("expected recent channel health to be cleared, got %#v", snapshot)
+	}
+}

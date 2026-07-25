@@ -132,6 +132,11 @@ func resetCircuitBreakers() {
 	circuitBreakerEntryCount = 0
 }
 
+// ClearCircuitBreakers clears current circuit state without affecting sticky sessions.
+func ClearCircuitBreakers() {
+	resetCircuitBreakers()
+}
+
 func circuitBreakerCount() int {
 	circuitBreakerStoreMu.Lock()
 	defer circuitBreakerStoreMu.Unlock()

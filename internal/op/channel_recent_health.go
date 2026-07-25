@@ -55,6 +55,10 @@ func (r *recentHealthRing) countSince(since time.Time) (success, failed int64) {
 
 var recentChannelHealth sync.Map
 
+func StatsChannelRecentClear() {
+	recentChannelHealth.Clear()
+}
+
 func StatsChannelRecentRecord(channelID int, success bool) {
 	if channelID <= 0 {
 		return

@@ -61,6 +61,22 @@ func TestResetStickyByChannelRemovesOnlyTargetChannel(t *testing.T) {
 	}
 }
 
+func TestClearCircuitBreakersPreservesStickySessions(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
+	setCircuitEntryStateForTest(t, circuitKey(1, 10, "gpt-4o"), StateOpen, time.Now(), 1)
+	SetSticky(7, "gpt-4o", 10, 100)
+
+	ClearCircuitBreakers()
+
+	if snapshots := ListCircuitSnapshots(); len(snapshots) != 0 {
+		t.Fatalf("expected circuit state to be cleared, got %#v", snapshots)
+	}
+	if entry := GetSticky(7, "gpt-4o", time.Minute); entry == nil || entry.ChannelID != 10 {
+		t.Fatalf("expected sticky session to be preserved, got %#v", entry)
+	}
+}
+
 func TestHalfOpenDoesNotRemainTrippedForeverWithoutResult(t *testing.T) {
 	Reset()
 	key := circuitKey(7, 8, "gpt-4o")

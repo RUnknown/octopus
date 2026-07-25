@@ -844,7 +844,8 @@
             "transportInput": "传输输入",
             "billInput": "计费输入",
             "cacheRead": "缓存读取",
-            "cacheWrite": "缓存写入"
+            "cacheWrite": "缓存写入",
+            "cacheHitRate": "缓存命中率"
         },
         "active": {
             "open": "当前请求",
