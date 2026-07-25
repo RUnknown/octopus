@@ -487,6 +487,9 @@ func TestRunGroupHealthHonorsChannelSkipProbe(t *testing.T) {
 	if err != nil || view.Latest == nil || len(view.Latest.Attempts) != 1 {
 		t.Fatalf("unexpected view=%#v err=%v", view, err)
 	}
+	if view.Latest.Status != model.GroupHealthStatusPartial {
+		t.Fatalf("expected all-skipped health check to be partial, got %s", view.Latest.Status)
+	}
 	if attempt := view.Latest.Attempts[0]; attempt.Status != model.GroupHealthAttemptStatusSkipped || attempt.ErrorMessage != "channel health probe disabled" {
 		t.Fatalf("unexpected attempt: %#v", attempt)
 	}

@@ -105,6 +105,7 @@ func TestProjectAccountSupportsAllConfiguredRouteBuckets(t *testing.T) {
 	_, account := createProjectionFixture(t, ctx)
 
 	extraModels := []model.SiteModel{
+		{SiteAccountID: account.ID, GroupKey: model.SiteDefaultGroupKey, ModelName: "gpt-image-2", Source: "sync", RouteType: model.SiteModelRouteTypeOpenAIImage},
 		{SiteAccountID: account.ID, GroupKey: model.SiteDefaultGroupKey, ModelName: "text-embedding-3-large", Source: "sync", RouteType: model.SiteModelRouteTypeOpenAIEmbedding},
 		{SiteAccountID: account.ID, GroupKey: model.SiteDefaultGroupKey, ModelName: "doubao-seed-1-6", Source: "sync", RouteType: model.SiteModelRouteTypeVolcengine},
 	}
@@ -116,20 +117,27 @@ func TestProjectAccountSupportsAllConfiguredRouteBuckets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ProjectAccount returned error: %v", err)
 	}
-	if len(channelIDs) != 5 {
-		t.Fatalf("expected 5 managed channels for 5 route buckets, got %d", len(channelIDs))
+	if len(channelIDs) != 6 {
+		t.Fatalf("expected 6 managed channels for 6 route buckets, got %d", len(channelIDs))
 	}
 
 	channelsByGroup := loadProjectedChannelsByGroupKey(t, ctx, account.ID)
-	if len(channelsByGroup) != 5 {
-		t.Fatalf("expected 5 bindings, got %d", len(channelsByGroup))
+	if len(channelsByGroup) != 6 {
+		t.Fatalf("expected 6 bindings, got %d", len(channelsByGroup))
 	}
 
 	assertProjectedChannel(t, channelsByGroup, "default", outbound.OutboundTypeOpenAIChat, "gpt-4o-mini", false)
+	assertProjectedChannel(t, channelsByGroup, "default::openai-image", outbound.OutboundTypeOpenAIChat, "gpt-image-2", true)
 	assertProjectedChannel(t, channelsByGroup, "default::anthropic", outbound.OutboundTypeAnthropic, "claude-3-5-sonnet", true)
 	assertProjectedChannel(t, channelsByGroup, "default::gemini", outbound.OutboundTypeGemini, "gemini-2.0-flash", true)
 	assertProjectedChannel(t, channelsByGroup, "default::volcengine", outbound.OutboundTypeVolcengine, "doubao-seed-1-6", true)
 	assertProjectedChannel(t, channelsByGroup, "default::openai-embedding", outbound.OutboundTypeOpenAIEmbedding, "text-embedding-3-large", true)
+	if channelsByGroup["default"].SkipHealthProbe {
+		t.Fatalf("expected regular chat channel to keep health probes enabled")
+	}
+	if !channelsByGroup["default::openai-image"].SkipHealthProbe {
+		t.Fatalf("expected OpenAI Images channel to skip generic health probes")
+	}
 }
 
 func TestProjectAccountRewritesGroupItemsBeforeRemovingStaleManagedBindings(t *testing.T) {
@@ -323,7 +331,7 @@ func TestProjectAccountReusesOrphanManagedChannelWithSameName(t *testing.T) {
 	}
 
 	group := model.SiteUserGroup{GroupKey: model.SiteDefaultGroupKey, Name: model.SiteDefaultGroupName}
-	orphanName := buildManagedChannelName(site, account, group, outbound.OutboundTypeOpenAIChat)
+	orphanName := buildManagedChannelName(site, account, group, model.SiteModelRouteTypeOpenAIChat)
 	orphanChannel := model.Channel{
 		Name:      orphanName,
 		Type:      outbound.OutboundTypeOpenAIChat,
@@ -1110,6 +1118,7 @@ func assertProjectedChannel(t *testing.T, channelsByGroup map[string]model.Chann
 	}
 	expectedNames := map[string]string{
 		"default":                   "Projection Site/Primary Account/default-Chat",
+		"default::openai-image":     "Projection Site/Primary Account/default-Images",
 		"default::anthropic":        "Projection Site/Primary Account/default-Anthropic",
 		"default::gemini":           "Projection Site/Primary Account/default-Gemini",
 		"default::volcengine":       "Projection Site/Primary Account/default-Volcengine",

@@ -157,6 +157,7 @@ func TestCompactSiteModelRouteTypeName(t *testing.T) {
 	}{
 		{name: "chat", routeType: SiteModelRouteTypeOpenAIChat, expected: "Chat"},
 		{name: "response", routeType: SiteModelRouteTypeOpenAIResponse, expected: "Response"},
+		{name: "images", routeType: SiteModelRouteTypeOpenAIImage, expected: "Images"},
 		{name: "anthropic", routeType: SiteModelRouteTypeAnthropic, expected: "Anthropic"},
 		{name: "gemini", routeType: SiteModelRouteTypeGemini, expected: "Gemini"},
 		{name: "embedding", routeType: SiteModelRouteTypeOpenAIEmbedding, expected: "Embedding"},
@@ -172,6 +173,17 @@ func TestCompactSiteModelRouteTypeName(t *testing.T) {
 	}
 }
 
+func TestSiteChannelBindingKeyRoundTripsOpenAIImagesRoute(t *testing.T) {
+	key := ComposeSiteChannelBindingKey(SiteDefaultGroupKey, SiteModelRouteTypeOpenAIImage, true)
+	if key != "default::openai-image" {
+		t.Fatalf("expected image binding key, got %q", key)
+	}
+	baseKey, routeType := ParseSiteChannelBindingKey(key)
+	if baseKey != SiteDefaultGroupKey || routeType != SiteModelRouteTypeOpenAIImage {
+		t.Fatalf("expected image route round trip, got base=%q route=%q", baseKey, routeType)
+	}
+}
+
 func TestInferSiteModelRouteType(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -180,6 +192,8 @@ func TestInferSiteModelRouteType(t *testing.T) {
 	}{
 		{name: "anthropic models stay anthropic", modelName: "claude-3-5-sonnet", expected: SiteModelRouteTypeAnthropic},
 		{name: "gemini models stay gemini", modelName: "gemini-2.0-flash", expected: SiteModelRouteTypeGemini},
+		{name: "gpt image models use images route", modelName: "gpt-image-2", expected: SiteModelRouteTypeOpenAIImage},
+		{name: "dall-e models use images route", modelName: "dall-e-3", expected: SiteModelRouteTypeOpenAIImage},
 		{name: "embedding models use embedding route", modelName: "text-embedding-3-large", expected: SiteModelRouteTypeOpenAIEmbedding},
 		{name: "gpt 4o defaults to chat without metadata", modelName: "gpt-4o-mini", expected: SiteModelRouteTypeOpenAIChat},
 		{name: "gpt 4.1 defaults to chat without metadata", modelName: "gpt-4.1", expected: SiteModelRouteTypeOpenAIChat},

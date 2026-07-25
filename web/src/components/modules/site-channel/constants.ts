@@ -4,6 +4,7 @@ import { ChannelType } from '@/api/endpoints/channel';
 export const SITE_ROUTE_COLUMN_ORDER: SiteModelRouteType[] = [
     'openai_chat',
     'openai_response',
+    'openai_image',
     'anthropic',
     'gemini',
     'volcengine',
@@ -18,6 +19,7 @@ export const SITE_ROUTE_DISPLAY_ORDER: SiteModelRouteType[] = [
 export const SITE_ROUTE_TO_CHANNEL_TYPE: Record<Exclude<SiteModelRouteType, 'unknown'>, ChannelType> = {
     openai_chat: ChannelType.OpenAIChat,
     openai_response: ChannelType.OpenAIResponse,
+    openai_image: ChannelType.OpenAIChat,
     anthropic: ChannelType.Anthropic,
     gemini: ChannelType.Gemini,
     volcengine: ChannelType.Volcengine,
@@ -40,6 +42,8 @@ export function getRouteTypeTone(routeType: SiteModelRouteType) {
             return 'border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-300';
         case 'openai_response':
             return 'border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300';
+        case 'openai_image':
+            return 'border-pink-500/30 bg-pink-500/10 text-pink-700 dark:text-pink-300';
         default:
             return 'border-primary/20 bg-primary/10 text-primary';
     }

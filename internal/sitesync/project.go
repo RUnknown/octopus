@@ -127,21 +127,22 @@ func ProjectAccount(ctx context.Context, accountID int) ([]int, error) {
 			obType := routeType.ToOutboundType()
 			baseUrls := []model.BaseUrl{{URL: resolveProjectedChannelBaseURL(siteRecord, routeType), Delay: 0}}
 			modelNames := extractSiteModelNames(bucketModels)
-			bindingKey := compositeBindingKey(groupKey, obType, shouldSplit)
+			bindingKey := compositeBindingKey(groupKey, routeType, shouldSplit)
 			channelPayload := model.Channel{
-				Name:          buildManagedChannelName(siteRecord, account, group, obType),
-				Type:          obType,
-				Enabled:       enabled,
-				BaseUrls:      baseUrls,
-				Keys:          buildChannelKeys(groupTokens, siteRecord.Platform),
-				Model:         strings.Join(modelNames, ","),
-				CustomModel:   "",
-				ProxyMode:     proxyMode,
-				ProxyConfigID: proxyConfigID,
-				Proxy:         proxyMode != model.ProxyUsageModeDirect,
-				AutoSync:      false,
-				AutoGroup:     model.AutoGroupTypeNone,
-				CustomHeader:  siteRecord.CustomHeader,
+				Name:            buildManagedChannelName(siteRecord, account, group, routeType),
+				Type:            obType,
+				Enabled:         enabled,
+				BaseUrls:        baseUrls,
+				Keys:            buildChannelKeys(groupTokens, siteRecord.Platform),
+				Model:           strings.Join(modelNames, ","),
+				CustomModel:     "",
+				ProxyMode:       proxyMode,
+				ProxyConfigID:   proxyConfigID,
+				Proxy:           proxyMode != model.ProxyUsageModeDirect,
+				AutoSync:        false,
+				SkipHealthProbe: routeType == model.SiteModelRouteTypeOpenAIImage,
+				AutoGroup:       model.AutoGroupTypeNone,
+				CustomHeader:    siteRecord.CustomHeader,
 			}
 
 			binding, exists := bindingMap[bindingKey]
@@ -201,7 +202,21 @@ func ProjectAccount(ctx context.Context, accountID int) ([]int, error) {
 				continue
 			}
 
-			updateReq := &model.ChannelUpdateRequest{ID: existingChannel.ID, Name: &channelPayload.Name, Type: &channelPayload.Type, Enabled: &channelPayload.Enabled, BaseUrls: &channelPayload.BaseUrls, Model: &channelPayload.Model, CustomModel: &channelPayload.CustomModel, ProxyMode: &channelPayload.ProxyMode, ProxyConfigID: channelPayload.ProxyConfigID, AutoSync: &channelPayload.AutoSync, CustomHeader: &channelPayload.CustomHeader, BypassManagedCheck: true}
+			updateReq := &model.ChannelUpdateRequest{
+				ID:                 existingChannel.ID,
+				Name:               &channelPayload.Name,
+				Type:               &channelPayload.Type,
+				Enabled:            &channelPayload.Enabled,
+				BaseUrls:           &channelPayload.BaseUrls,
+				Model:              &channelPayload.Model,
+				CustomModel:        &channelPayload.CustomModel,
+				ProxyMode:          &channelPayload.ProxyMode,
+				ProxyConfigID:      channelPayload.ProxyConfigID,
+				AutoSync:           &channelPayload.AutoSync,
+				SkipHealthProbe:    &channelPayload.SkipHealthProbe,
+				CustomHeader:       &channelPayload.CustomHeader,
+				BypassManagedCheck: true,
+			}
 			updateReq.KeysToAdd, updateReq.KeysToUpdate, updateReq.KeysToDelete = diffManagedChannelKeys(existingChannel.Keys, channelPayload.Keys)
 			if _, err := op.ChannelUpdate(updateReq, ctx); err != nil {
 				return nil, fmt.Errorf("failed to update managed channel: %w", err)
@@ -234,8 +249,7 @@ func ProjectAccount(ctx context.Context, accountID int) ([]int, error) {
 			if len(bucketModels) == 0 {
 				continue
 			}
-			obType := routeType.ToOutboundType()
-			desiredSet[compositeBindingKey(groupKey, obType, shouldSplit)] = struct{}{}
+			desiredSet[compositeBindingKey(groupKey, routeType, shouldSplit)] = struct{}{}
 		}
 	}
 	if err := rewriteManagedGroupItemsForAccount(ctx, siteRecord, account, shouldSplit, groupMap, tokenGroups, account.Models, bindingChannelByKey); err != nil {
@@ -348,9 +362,9 @@ func ProjectSite(ctx context.Context, siteID int) error {
 	return nil
 }
 
-func buildManagedChannelName(siteRecord *model.Site, account *model.SiteAccount, group model.SiteUserGroup, obType outbound.OutboundType) string {
+func buildManagedChannelName(siteRecord *model.Site, account *model.SiteAccount, group model.SiteUserGroup, routeType model.SiteModelRouteType) string {
 	groupName := model.NormalizeSiteGroupName(group.GroupKey, group.Name)
-	formatName := model.CompactSiteModelRouteTypeName(model.SiteModelRouteTypeFromOutboundType(obType))
+	formatName := model.CompactSiteModelRouteTypeName(routeType)
 	return fmt.Sprintf("%s/%s/%s-%s", siteRecord.Name, account.Name, groupName, formatName)
 }
 
@@ -640,8 +654,8 @@ func siteModelBelongsToProjectedGroup(item model.SiteModel, groupKey string) boo
 }
 
 // compositeBindingKey 生成复合绑定 key，用于区分同一 tokenGroup 的不同端点格式 Channel
-func compositeBindingKey(groupKey string, obType outbound.OutboundType, split bool) string {
-	return model.ComposeSiteChannelBindingKey(groupKey, model.SiteModelRouteTypeFromOutboundType(obType), split)
+func compositeBindingKey(groupKey string, routeType model.SiteModelRouteType, split bool) string {
+	return model.ComposeSiteChannelBindingKey(groupKey, routeType, split)
 }
 
 func parseCompositeBindingKey(groupKey string) (string, model.SiteModelRouteType) {
@@ -726,7 +740,7 @@ func rewriteManagedGroupItemsForAccount(ctx context.Context, siteRecord *model.S
 			affectedGroupIDs[item.GroupID] = struct{}{}
 			continue
 		}
-		targetBindingKey := compositeBindingKey(baseGroupKey, routeType.ToOutboundType(), split)
+		targetBindingKey := compositeBindingKey(baseGroupKey, routeType, split)
 		targetChannelID, ok := bindingChannelByKey[targetBindingKey]
 		if !ok {
 			deleteItemIDs = append(deleteItemIDs, item.ID)
@@ -776,6 +790,18 @@ func shouldSplitForAccount(account *model.SiteAccount, site *model.Site) bool {
 	// 优先级 2: 平台默认策略
 	if model.ShouldSplitSiteChannelRoutes(site.Platform) {
 		return true
+	}
+
+	// Images models use the OpenAI-compatible channel type for relay purposes,
+	// but must remain in their own binding so chat health probes are not applied
+	// to an upstream that only exposes /v1/images/*.
+	for _, m := range account.Models {
+		if m.Disabled {
+			continue
+		}
+		if model.NormalizeSiteModelRouteType(m.RouteType) == model.SiteModelRouteTypeOpenAIImage {
+			return true
+		}
 	}
 
 	// 优先级 3: 检测手动覆盖是否与平台默认类型不同

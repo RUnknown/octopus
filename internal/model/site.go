@@ -19,8 +19,8 @@ const (
 	SitePlatformOneAPI    SitePlatform = "one-api"
 	SitePlatformOneHub    SitePlatform = "one-hub"
 	SitePlatformDoneHub   SitePlatform = "done-hub"
-	SitePlatformSub2API SitePlatform = "sub2api"
-	SitePlatformAPI     SitePlatform = "api"
+	SitePlatformSub2API   SitePlatform = "sub2api"
+	SitePlatformAPI       SitePlatform = "api"
 )
 
 type SiteCredentialType string
@@ -59,6 +59,7 @@ type SiteModelRouteType string
 const (
 	SiteModelRouteTypeOpenAIChat      SiteModelRouteType = "openai_chat"
 	SiteModelRouteTypeOpenAIResponse  SiteModelRouteType = "openai_response"
+	SiteModelRouteTypeOpenAIImage     SiteModelRouteType = "openai_image"
 	SiteModelRouteTypeAnthropic       SiteModelRouteType = "anthropic"
 	SiteModelRouteTypeGemini          SiteModelRouteType = "gemini"
 	SiteModelRouteTypeVolcengine      SiteModelRouteType = "volcengine"
@@ -640,6 +641,7 @@ func NormalizeSiteModelRouteType(routeType SiteModelRouteType) SiteModelRouteTyp
 	switch routeType {
 	case SiteModelRouteTypeOpenAIChat,
 		SiteModelRouteTypeOpenAIResponse,
+		SiteModelRouteTypeOpenAIImage,
 		SiteModelRouteTypeAnthropic,
 		SiteModelRouteTypeGemini,
 		SiteModelRouteTypeVolcengine,
@@ -655,6 +657,7 @@ func IsProjectedSiteModelRouteType(routeType SiteModelRouteType) bool {
 	switch routeType {
 	case SiteModelRouteTypeOpenAIChat,
 		SiteModelRouteTypeOpenAIResponse,
+		SiteModelRouteTypeOpenAIImage,
 		SiteModelRouteTypeAnthropic,
 		SiteModelRouteTypeGemini,
 		SiteModelRouteTypeVolcengine,
@@ -687,6 +690,10 @@ func InferSiteModelRouteType(modelName string) SiteModelRouteType {
 		return SiteModelRouteTypeAnthropic
 	case strings.HasPrefix(lower, "gemini"):
 		return SiteModelRouteTypeGemini
+	case strings.HasPrefix(lower, "gpt-image"),
+		strings.HasPrefix(lower, "dall-e"),
+		strings.Contains(lower, "openai-image"):
+		return SiteModelRouteTypeOpenAIImage
 	case strings.Contains(lower, "embedding"):
 		return SiteModelRouteTypeOpenAIEmbedding
 	default:
@@ -698,6 +705,8 @@ func SiteModelRouteTypeSuffix(routeType SiteModelRouteType) string {
 	switch NormalizeSiteModelRouteType(routeType) {
 	case SiteModelRouteTypeOpenAIResponse:
 		return "openai-response"
+	case SiteModelRouteTypeOpenAIImage:
+		return "openai-image"
 	case SiteModelRouteTypeAnthropic:
 		return "anthropic"
 	case SiteModelRouteTypeGemini:
@@ -715,6 +724,8 @@ func SiteModelRouteTypeName(routeType SiteModelRouteType) string {
 	switch NormalizeSiteModelRouteType(routeType) {
 	case SiteModelRouteTypeOpenAIResponse:
 		return "OpenAI Response"
+	case SiteModelRouteTypeOpenAIImage:
+		return "OpenAI Images"
 	case SiteModelRouteTypeAnthropic:
 		return "Anthropic"
 	case SiteModelRouteTypeGemini:
@@ -736,6 +747,8 @@ func CompactSiteModelRouteTypeName(routeType SiteModelRouteType) string {
 		return "Chat"
 	case SiteModelRouteTypeOpenAIResponse:
 		return "Response"
+	case SiteModelRouteTypeOpenAIImage:
+		return "Images"
 	case SiteModelRouteTypeAnthropic:
 		return "Anthropic"
 	case SiteModelRouteTypeGemini:
@@ -770,6 +783,8 @@ func ParseSiteChannelBindingKey(groupKey string) (string, SiteModelRouteType) {
 	switch suffix {
 	case "openai-response":
 		return baseKey, SiteModelRouteTypeOpenAIResponse
+	case "openai-image":
+		return baseKey, SiteModelRouteTypeOpenAIImage
 	case "anthropic":
 		return baseKey, SiteModelRouteTypeAnthropic
 	case "gemini":
@@ -796,6 +811,10 @@ func (t SiteModelRouteType) ToOutboundType() outbound.OutboundType {
 	switch NormalizeSiteModelRouteType(t) {
 	case SiteModelRouteTypeOpenAIResponse:
 		return outbound.OutboundTypeOpenAIResponse
+	case SiteModelRouteTypeOpenAIImage:
+		// Images requests use the dedicated relay path, while the projected
+		// channel keeps the OpenAI-compatible credential and base URL shape.
+		return outbound.OutboundTypeOpenAIChat
 	case SiteModelRouteTypeAnthropic:
 		return outbound.OutboundTypeAnthropic
 	case SiteModelRouteTypeGemini:
