@@ -23,6 +23,10 @@ func init() {
 				Handle(getGroupList),
 		).
 		AddRoute(
+			router.NewRoute("/route-state/:id", http.MethodGet).
+				Handle(getGroupRouteState),
+		).
+		AddRoute(
 			router.NewRoute("/create", http.MethodPost).
 				Handle(createGroup),
 		).

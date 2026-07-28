@@ -47,6 +47,9 @@ func TestConvertInputFromMessagesGeneratesFunctionCallIDAndItemReference(t *test
 	if functionCall.ID == "" {
 		t.Error("function_call item missing ID")
 	}
+	if !isResponsesFunctionCallID(functionCall.ID) {
+		t.Errorf("function_call id should use fc prefix, got %s", functionCall.ID)
+	}
 	if functionCall.CallID != "call_abc123" {
 		t.Errorf("expected call_id=call_abc123, got %s", functionCall.CallID)
 	}
@@ -102,8 +105,11 @@ func TestSanitizeResponsesRawItemsAddsItemReference(t *testing.T) {
 	if !ok {
 		t.Fatal("function_call_output missing item_reference after sanitization")
 	}
-	if itemRef != "item_xyz789" {
-		t.Errorf("expected item_reference=item_xyz789, got %s", itemRef)
+	if !isResponsesFunctionCallID(itemRef) {
+		t.Errorf("expected item_reference to use fc prefix, got %s", itemRef)
+	}
+	if items[0]["id"] != itemRef {
+		t.Errorf("expected function_call id and output item_reference to match, got id=%v ref=%s", items[0]["id"], itemRef)
 	}
 }
 
@@ -113,11 +119,11 @@ func TestSanitizeResponsesRawItemsFixesNullItemReference(t *testing.T) {
 		raw  string
 	}{
 		{"null value", `[
-			{"id":"item_xyz","type":"function_call","call_id":"call_1","name":"f","arguments":"{}"},
+			{"id":"fc_xyz","type":"function_call","call_id":"call_1","name":"f","arguments":"{}"},
 			{"type":"function_call_output","call_id":"call_1","item_reference":null,"output":{"text":"ok"}}
 		]`},
 		{"empty string", `[
-			{"id":"item_xyz","type":"function_call","call_id":"call_1","name":"f","arguments":"{}"},
+			{"id":"fc_xyz","type":"function_call","call_id":"call_1","name":"f","arguments":"{}"},
 			{"type":"function_call_output","call_id":"call_1","item_reference":"","output":{"text":"ok"}}
 		]`},
 	}
@@ -129,8 +135,8 @@ func TestSanitizeResponsesRawItemsFixesNullItemReference(t *testing.T) {
 				t.Fatalf("unmarshal: %v", err)
 			}
 			ref, ok := items[1]["item_reference"].(string)
-			if !ok || ref != "item_xyz" {
-				t.Errorf("expected item_reference=item_xyz, got %v", items[1]["item_reference"])
+			if !ok || ref != "fc_xyz" {
+				t.Errorf("expected item_reference=fc_xyz, got %v", items[1]["item_reference"])
 			}
 		})
 	}
@@ -162,6 +168,9 @@ func TestSanitizeResponsesRawItemsBackfillsMissingFunctionCallID(t *testing.T) {
 	if !ok || generatedID == "" {
 		t.Fatal("function_call missing generated id")
 	}
+	if !isResponsesFunctionCallID(generatedID) {
+		t.Fatalf("function_call id should use fc prefix, got %s", generatedID)
+	}
 
 	ref, ok := items[1]["item_reference"].(string)
 	if !ok || ref == "" {
@@ -169,6 +178,29 @@ func TestSanitizeResponsesRawItemsBackfillsMissingFunctionCallID(t *testing.T) {
 	}
 	if ref != generatedID {
 		t.Errorf("item_reference=%s doesn't match generated id=%s", ref, generatedID)
+	}
+}
+
+func TestSanitizeResponsesRawItemsNormalizesInvalidFunctionCallIDPrefix(t *testing.T) {
+	rawItems := json.RawMessage(`[
+		{"id":"item_badprefix","type":"function_call","call_id":"call_bad","name":"lookup","arguments":"{}"},
+		{"type":"function_call_output","call_id":"call_bad","item_reference":"item_badprefix","output":{"text":"ok"}}
+	]`)
+
+	sanitized := sanitizeResponsesRawItems(rawItems)
+
+	var items []map[string]interface{}
+	if err := json.Unmarshal(sanitized, &items); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	functionCallID, ok := items[0]["id"].(string)
+	if !ok || !isResponsesFunctionCallID(functionCallID) {
+		t.Fatalf("expected normalized fc id, got %v", items[0]["id"])
+	}
+	ref, ok := items[1]["item_reference"].(string)
+	if !ok || ref != functionCallID {
+		t.Fatalf("expected output item_reference=%s, got %v", functionCallID, items[1]["item_reference"])
 	}
 }
 
@@ -231,6 +263,9 @@ func TestMarshalResponsesInputItemsPreservesItemReference(t *testing.T) {
 	}
 	if functionCallID == "" {
 		t.Fatal("function_call item has empty id")
+	}
+	if !isResponsesFunctionCallID(functionCallID) {
+		t.Fatalf("function_call id should use fc prefix, got %s", functionCallID)
 	}
 	if !foundOutput {
 		t.Fatal("function_call_output item missing item_reference")
