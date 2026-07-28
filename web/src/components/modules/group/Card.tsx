@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Trash2, X, Pencil, Pin, PinOff } from 'lucide-react';
+import { Activity, Loader2, RefreshCw, Trash2, X, Pencil, Pin, PinOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { type Group, useDeleteGroup, useUpdateGroup, useToggleGroupPin } from '@/api/endpoints/group';
+import { GroupMode, type Group, type GroupUpdateRequest, useDeleteGroup, useUpdateGroup, useToggleGroupPin, useGroupRouteState, type ClientProtocol, type GroupRouteCandidateState } from '@/api/endpoints/group';
 import { useModelChannelList } from '@/api/endpoints/model';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
@@ -15,7 +15,6 @@ import { MemberList } from './ItemList';
 import { GroupEditor, type GroupEditorValues } from './Editor';
 import { GroupHealthBadge } from './health';
 import { modelChannelKey, MODE_LABELS } from './utils';
-import { GroupMode, type GroupUpdateRequest } from '@/api/endpoints/group';
 import { PresetPopover } from './PresetPopover';
 import {
     MorphingDialog,
@@ -27,6 +26,9 @@ import {
     MorphingDialogTrigger,
     useMorphingDialog,
 } from '@/components/ui/morphing-dialog';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 interface EditDialogContentProps {
     group: Group;
@@ -72,6 +74,176 @@ function EditDialogContent({ group, displayMembers, isSubmitting, onSubmit }: Ed
     );
 }
 
+const CLIENT_PROTOCOLS: ClientProtocol[] = [
+    'openai_responses',
+    'openai_chat',
+    'codex_responses',
+    'anthropic',
+    'gemini',
+    'openai_embeddings',
+];
+
+function formatDuration(seconds: number) {
+    if (seconds < 60) return `${seconds}s`;
+    return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+}
+
+function formatUnixTime(value?: number) {
+    if (!value) return '-';
+    return new Date(value * 1000).toLocaleString('zh-CN', {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+    });
+}
+
+function RouteCandidateRow({
+    candidate,
+    isNext,
+}: {
+    candidate: GroupRouteCandidateState;
+    isNext: boolean;
+}) {
+    const t = useTranslations('group.diagnostics');
+    const visibleKeys = candidate.keys?.slice(0, 4) ?? [];
+
+    return (
+        <div className="rounded-lg border border-border/70 bg-muted/20 p-3 text-sm">
+            <div className="flex flex-wrap items-start gap-2">
+                <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-foreground">{candidate.channel_name}</span>
+                        <span className="truncate text-muted-foreground">{candidate.model_name}</span>
+                        {candidate.sticky ? <Pin className="size-3.5 shrink-0 text-amber-500" /> : null}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                        <span>{t('order')}: <span className="font-mono text-foreground">{candidate.priority}</span></span>
+                        <span>{t('weight')}: <span className="font-mono text-foreground">{candidate.weight}</span></span>
+                        <span>{t('keys')}: <span className="font-mono text-foreground">{candidate.available_key_count}/{candidate.key_count}</span></span>
+                        {candidate.upstream_protocol ? <span>{t('upstream')}: <span className="text-foreground">{candidate.upstream_protocol}</span></span> : null}
+                        {candidate.transform_mode ? <span>{t('mode')}: <span className="text-foreground">{candidate.transform_mode}</span></span> : null}
+                    </div>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-1.5">
+                    {isNext ? <Badge className="h-5 text-[11px]">{t('next')}</Badge> : null}
+                    <Badge variant={candidate.available ? 'secondary' : 'outline'} className="h-5 text-[11px]">
+                        {candidate.available ? t('available') : t('unavailable')}
+                    </Badge>
+                    {candidate.protocol_supported !== undefined ? (
+                        <Badge variant={candidate.protocol_supported ? 'secondary' : 'outline'} className="h-5 text-[11px]">
+                            {candidate.protocol_supported ? t('supported') : t('unsupported')}
+                        </Badge>
+                    ) : null}
+                </div>
+            </div>
+            {(candidate.reason || candidate.protocol_reason || candidate.cooldown_seconds || candidate.recover_at_unix) ? (
+                <div className="mt-2 space-y-1 rounded-md bg-background/70 px-2 py-1.5 text-xs text-muted-foreground">
+                    {candidate.reason ? <div>{t('reason')}: <span className="text-foreground">{candidate.reason}</span></div> : null}
+                    {candidate.protocol_reason ? <div>{t('protocolReason')}: <span className="text-foreground">{candidate.protocol_reason}</span></div> : null}
+                    {candidate.cooldown_seconds ? <div>{t('cooldown')}: <span className="font-mono text-foreground">{formatDuration(candidate.cooldown_seconds)}</span></div> : null}
+                    {candidate.recover_at_unix ? <div>{t('recoverAt')}: <span className="text-foreground">{formatUnixTime(candidate.recover_at_unix)}</span></div> : null}
+                </div>
+            ) : null}
+            {visibleKeys.length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                    {visibleKeys.map((key) => (
+                        <Badge key={key.key_id} variant="outline" className="h-5 max-w-[180px] truncate px-1.5 text-[10px]">
+                            #{key.key_id} {key.available ? t('available') : (key.reason || key.circuit?.state_name || t('unavailable'))}
+                        </Badge>
+                    ))}
+                    {(candidate.keys?.length ?? 0) > visibleKeys.length ? (
+                        <Badge variant="outline" className="h-5 px-1.5 text-[10px]">+{(candidate.keys?.length ?? 0) - visibleKeys.length}</Badge>
+                    ) : null}
+                </div>
+            ) : null}
+        </div>
+    );
+}
+
+function GroupRouteDiagnosticsDialog({
+    group,
+    open,
+    onOpenChange,
+}: {
+    group: Group;
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+}) {
+    const t = useTranslations('group.diagnostics');
+    const [protocol, setProtocol] = useState<ClientProtocol>('openai_responses');
+    const routeQuery = useGroupRouteState(group.id, protocol, open);
+    const state = routeQuery.data;
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="flex max-h-[calc(100vh-2rem)] w-[min(820px,calc(100vw-2rem))] max-w-none flex-col overflow-hidden p-0">
+                <DialogHeader className="border-b border-border px-5 py-4 pr-12">
+                    <div className="flex items-center gap-2">
+                        <DialogTitle>{t('title')}</DialogTitle>
+                        {routeQuery.isFetching ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : null}
+                    </div>
+                    <DialogDescription>{group.name}</DialogDescription>
+                </DialogHeader>
+                <div className="border-b border-border px-5 py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-medium text-muted-foreground">{t('protocol')}</span>
+                        {CLIENT_PROTOCOLS.map((item) => (
+                            <Button
+                                key={item}
+                                type="button"
+                                variant={item === protocol ? 'default' : 'outline'}
+                                size="sm"
+                                className="h-7 px-2 text-xs"
+                                onClick={() => setProtocol(item)}
+                            >
+                                {item}
+                            </Button>
+                        ))}
+                        <Button type="button" variant="ghost" size="sm" onClick={() => void routeQuery.refetch()} disabled={routeQuery.isFetching} className="ml-auto h-7">
+                            <RefreshCw className="size-4" />
+                            {t('refresh')}
+                        </Button>
+                    </div>
+                </div>
+                <div className="min-h-0 flex-1 overflow-auto p-5">
+                    {routeQuery.isLoading ? (
+                        <div className="flex h-40 items-center justify-center text-muted-foreground">
+                            <Loader2 className="size-5 animate-spin" />
+                        </div>
+                    ) : state ? (
+                        <div className="space-y-3">
+                            <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground md:grid-cols-4">
+                                <div className="rounded-md border border-border/70 bg-muted/20 p-2">{t('candidateCount')}<div className="font-mono text-base text-foreground">{state.available_count}/{state.candidate_count}</div></div>
+                                <div className="rounded-md border border-border/70 bg-muted/20 p-2">{t('protocolAvailable')}<div className="font-mono text-base text-foreground">{state.protocol_available_count ?? '-'}</div></div>
+                                <div className="rounded-md border border-border/70 bg-muted/20 p-2">{t('next')}<div className="truncate text-sm text-foreground">{state.next_protocol_model_name ?? state.next_model_name ?? '-'}</div></div>
+                                <div className="rounded-md border border-border/70 bg-muted/20 p-2">{t('order')}<div className="text-sm text-foreground">{state.exact_order ? t('exactOrder') : t('computedOrder')}</div></div>
+                            </div>
+                            {state.order_note ? <div className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">{state.order_note}</div> : null}
+                            {state.candidates.length === 0 ? (
+                                <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">{t('empty')}</div>
+                            ) : (
+                                <div className="space-y-2.5">
+                                    {state.candidates.map((candidate) => (
+                                        <RouteCandidateRow
+                                            key={`${candidate.group_item_id}-${candidate.channel_id}-${candidate.model_name}`}
+                                            candidate={candidate}
+                                            isNext={state.next_protocol_channel_id === candidate.channel_id && state.next_protocol_model_name === candidate.model_name}
+                                        />
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">{t('empty')}</div>
+                    )}
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 export function GroupCard({ group }: { group: Group }) {
     const t = useTranslations('group');
     const updateGroup = useUpdateGroup();
@@ -80,6 +252,7 @@ export function GroupCard({ group }: { group: Group }) {
     const { data: modelChannels = [] } = useModelChannelList();
 
     const [confirmDelete, setConfirmDelete] = useState(false);
+    const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
     const [members, setMembers] = useState<SelectedMember[]>([]);
     const [weightOverrides, setWeightOverrides] = useState<Record<string, number>>({});
@@ -313,6 +486,20 @@ export function GroupCard({ group }: { group: Group }) {
 
                     <PresetPopover group={group} />
 
+                    <Tooltip side="top" sideOffset={10} align="center">
+                        <TooltipTrigger asChild>
+                            <button
+                                type="button"
+                                disabled={!group.id}
+                                onClick={() => setDiagnosticsOpen(true)}
+                                className="p-1.5 rounded-lg transition-colors hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
+                            >
+                                <Activity className="size-4" />
+                            </button>
+                        </TooltipTrigger>
+                        <TooltipContent>{t('detail.actions.diagnose')}</TooltipContent>
+                    </Tooltip>
+
                     <MorphingDialog>
                         <MorphingDialogTrigger className="p-1.5 rounded-lg transition-colors hover:bg-muted text-muted-foreground hover:text-foreground">
                             <Tooltip side="top" sideOffset={10} align="center">
@@ -336,6 +523,8 @@ export function GroupCard({ group }: { group: Group }) {
                     </MorphingDialog>
                 </div>
             </header>
+
+            <GroupRouteDiagnosticsDialog group={group} open={diagnosticsOpen} onOpenChange={setDiagnosticsOpen} />
 
             {/* Mode: quick switch (no need to enter Edit) */}
             <div className="flex gap-1 mb-3">

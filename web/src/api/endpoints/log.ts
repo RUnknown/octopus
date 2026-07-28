@@ -25,8 +25,13 @@ export interface ChannelAttempt {
     model_name: string;
     attempt_num: number;    // 第几次尝试
     status: AttemptStatus;
+    http_status?: number;
     duration: number;       // 耗时(毫秒)
     sticky?: boolean;
+    reason?: string;
+    retryable?: boolean;
+    cooldown_until?: number;
+    cooldown_seconds?: number;
     msg?: string;
 }
 
@@ -82,6 +87,26 @@ export interface RelayLog {
 }
 
 export type LogStatusFilter = 'all' | 'success' | 'error';
+
+export interface ActiveRelayRequest {
+    id: number;
+    api_key_id: number;
+    request_model: string;
+    actual_model?: string;
+    group_id?: number;
+    channel_id?: number;
+    channel_key_id?: number;
+    channel_name?: string;
+    stage: string;
+    attempt?: number;
+    started_at: number;
+    updated_at: number;
+    elapsed_ms: number;
+    stage_elapsed_ms: number;
+    streaming: boolean;
+    used_ws?: boolean;
+    last_message?: string;
+}
 
 /**
  * 日志列表查询参数
@@ -195,6 +220,19 @@ export function useLogPage(params: LogListParams) {
  */
 export async function getLogDetail(id: number): Promise<RelayLog> {
     return apiClient.get<RelayLog>(`/api/v1/log/${id}`);
+}
+
+export function useActiveRelayRequests(enabled = false) {
+    return useQuery({
+        queryKey: ['logs', 'active'],
+        queryFn: async () => {
+            const result = await apiClient.get<{ requests?: ActiveRelayRequest[] | null }>('/api/v1/log/active');
+            return result.requests ?? [];
+        },
+        enabled,
+        refetchInterval: enabled ? 3000 : false,
+        refetchOnWindowFocus: false,
+    });
 }
 
 export function useLogSiteActionTargets(ids: number[], enabled = true) {
