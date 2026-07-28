@@ -121,6 +121,7 @@ func (it *Iterator) Skip(channelID, channelKeyID int, channelName, msg string) {
 		AttemptNum:   it.count,
 		Status:       model.AttemptSkipped,
 		Sticky:       it.IsSticky(),
+		Reason:       msg,
 		Msg:          msg,
 	})
 }
@@ -128,24 +129,32 @@ func (it *Iterator) Skip(channelID, channelKeyID int, channelName, msg string) {
 // SkipCircuitBreak 检查熔断状态，若已熔断自动记录（含剩余冷却时间）并返回 true
 func (it *Iterator) SkipCircuitBreak(channelID, channelKeyID int, channelName string) bool {
 	modelName := it.candidates[it.index].ModelName
+	snapshot := InspectCircuit(channelID, channelKeyID, modelName)
 	tripped, remaining := IsTripped(channelID, channelKeyID, modelName)
 	if !tripped {
 		return false
 	}
+	if snapshot.CooldownSeconds == 0 && remaining > 0 {
+		snapshot.CooldownSeconds = int(remaining.Seconds())
+		snapshot.RecoverAtUnix = time.Now().Add(remaining).Unix()
+	}
 	msg := "circuit breaker tripped"
-	if remaining > 0 {
-		msg = fmt.Sprintf("circuit breaker tripped, remaining cooldown: %ds", int(remaining.Seconds()))
+	if snapshot.CooldownSeconds > 0 {
+		msg = fmt.Sprintf("circuit breaker tripped, remaining cooldown: %ds", snapshot.CooldownSeconds)
 	}
 	it.count++
 	it.attempts = append(it.attempts, model.ChannelAttempt{
-		ChannelID:    channelID,
-		ChannelKeyID: channelKeyID,
-		ChannelName:  channelName,
-		ModelName:    modelName,
-		AttemptNum:   it.count,
-		Status:       model.AttemptCircuitBreak,
-		Sticky:       it.IsSticky(),
-		Msg:          msg,
+		ChannelID:       channelID,
+		ChannelKeyID:    channelKeyID,
+		ChannelName:     channelName,
+		ModelName:       modelName,
+		AttemptNum:      it.count,
+		Status:          model.AttemptCircuitBreak,
+		Sticky:          it.IsSticky(),
+		Reason:          snapshot.StateName,
+		CooldownUntil:   snapshot.RecoverAtUnix,
+		CooldownSeconds: snapshot.CooldownSeconds,
+		Msg:             msg,
 	})
 	return true
 }
@@ -187,9 +196,20 @@ func (s *AttemptSpan) End(status model.AttemptStatus, statusCode int, msg string
 	}
 	s.ended = true
 	s.attempt.Status = status
+	s.attempt.HTTPStatus = statusCode
 	s.attempt.Duration = int(time.Since(s.startTime).Milliseconds())
+	if msg != "" {
+		s.attempt.Reason = msg
+	}
 	s.attempt.Msg = msg
 	s.iter.attempts = append(s.iter.attempts, s.attempt)
+}
+
+func (s *AttemptSpan) AttemptNum() int {
+	if s == nil {
+		return 0
+	}
+	return s.attempt.AttemptNum
 }
 
 // Duration 返回从开始到现在的耗时

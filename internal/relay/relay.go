@@ -132,6 +132,8 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 	isStream := internalRequest.Stream != nil && *internalRequest.Stream
 	hb := startEarlyHeartbeat(c, isStream)
 	defer hb.Stop()
+	activeRequestID := beginActiveRequest(apiKeyID, requestModel, isStream)
+	defer finishActiveRequest(activeRequestID)
 
 	// 如果触发了 HTTP replay，记录 ws_mode=replay 和 ws_recovery=replay
 	if responsesReplayState != nil {
@@ -152,6 +154,7 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		groupID:         group.ID,
 		groupSessionTTL: group.SessionKeepTime,
 		iter:            iter,
+		activeRequestID: activeRequestID,
 		rawBody:         rawBody,
 		heartbeat:       hb,
 	}
@@ -169,6 +172,10 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 	}
 
 	for iter.Next() {
+		updateActiveRequest(activeRequestID, func(view *ActiveRequestView) {
+			view.Stage = "select_candidate"
+			view.Attempt = iter.Index() + 1
+		})
 		select {
 		case <-c.Request.Context().Done():
 			log.Debugf("request context canceled, stopping retry")
@@ -178,6 +185,12 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		}
 
 		item := iter.Item()
+		updateActiveRequest(activeRequestID, func(view *ActiveRequestView) {
+			view.ChannelID = item.ChannelID
+			view.ActualModel = item.ModelName
+			view.GroupID = group.ID
+			view.LastMessage = "candidate selected"
+		})
 
 		// 获取通道
 		channel, err := op.ChannelGet(item.ChannelID, c.Request.Context())
@@ -246,6 +259,14 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 			}
 			continue
 		}
+		updateActiveRequest(activeRequestID, func(view *ActiveRequestView) {
+			view.Stage = "forwarding"
+			view.ChannelID = channel.ID
+			view.ChannelKeyID = usedKey.ID
+			view.ChannelName = channel.Name
+			view.ActualModel = internalRequest.Model
+			view.LastMessage = "upstream request in progress"
+		})
 
 		// 同通道重试循环
 		var result attemptResult
@@ -404,6 +425,16 @@ func circuitFailureKind(retryEnabled bool, statusCode int) balancer.FailureKind 
 // attempt 统一管理一次通道尝试的完整生命周期
 func (ra *relayAttempt) attempt() attemptResult {
 	span := ra.iter.StartAttempt(ra.channel.ID, ra.usedKey.ID, ra.channel.Name)
+	updateActiveRequest(ra.activeRequestID, func(view *ActiveRequestView) {
+		view.Stage = "forwarding"
+		view.ChannelID = ra.channel.ID
+		view.ChannelKeyID = ra.usedKey.ID
+		view.ChannelName = ra.channel.Name
+		view.ActualModel = ra.internalRequest.Model
+		view.Attempt = span.AttemptNum()
+		view.UsedWS = ra.metrics != nil && ra.metrics.UsedWS
+		view.LastMessage = "upstream request in progress"
+	})
 
 	// 转发请求
 	statusCode, fwdErr := ra.forward()
@@ -413,6 +444,11 @@ func (ra *relayAttempt) attempt() attemptResult {
 	ra.usedKey.LastUseTimeStamp = time.Now().Unix()
 
 	if fwdErr == nil {
+		updateActiveRequest(ra.activeRequestID, func(view *ActiveRequestView) {
+			view.Stage = "collecting_response"
+			view.LastMessage = "upstream succeeded"
+			view.UsedWS = ra.metrics != nil && ra.metrics.UsedWS
+		})
 		// ====== 成功 ======
 		// Passthrough handlers collect response at stream end via PassthroughConfig.CollectMetrics
 		ra.collectResponse()
@@ -436,6 +472,11 @@ func (ra *relayAttempt) attempt() attemptResult {
 	}
 
 	// ====== 失败 ======
+	updateActiveRequest(ra.activeRequestID, func(view *ActiveRequestView) {
+		view.Stage = "failed_attempt"
+		view.LastMessage = fwdErr.Error()
+		view.UsedWS = ra.metrics != nil && ra.metrics.UsedWS
+	})
 	if isFirstTokenTimeout(ra.requestContext(), fwdErr) {
 		op.ChannelKeyUpdate(ra.usedKey)
 		span.End(dbmodel.AttemptFailed, statusCode, "timeout=first_token: "+fwdErr.Error())

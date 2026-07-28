@@ -1161,7 +1161,7 @@ func convertAssistantMessageToResponses(msg model.Message) []ResponsesItem {
 	// Handle tool calls
 	for _, tc := range msg.ToolCalls {
 		items = append(items, ResponsesItem{
-			ID:        generateResponsesItemID(),
+			ID:        generateResponsesFunctionCallID(),
 			Type:      "function_call",
 			CallID:    tc.ID,
 			Name:      tc.Function.Name,
@@ -1633,10 +1633,32 @@ func sanitizeResponsesItems(items []ResponsesItem) []ResponsesItem {
 	}
 
 	sanitized := make([]ResponsesItem, len(items))
+	callIDToItemID := make(map[string]string)
 	for i, item := range items {
 		sanitized[i] = item
 		ensureResponsesReasoningSummary(&sanitized[i])
 		ensureResponsesRefusalShape(&sanitized[i])
+		if sanitized[i].Type == "function_call" && sanitized[i].CallID != "" {
+			if !isResponsesFunctionCallID(sanitized[i].ID) {
+				sanitized[i].ID = generateResponsesFunctionCallID()
+			}
+			callIDToItemID[sanitized[i].CallID] = sanitized[i].ID
+		}
+	}
+	for i := range sanitized {
+		if sanitized[i].Type != "function_call_output" {
+			continue
+		}
+		if sanitized[i].CallID == "" {
+			continue
+		}
+		itemID, ok := callIDToItemID[sanitized[i].CallID]
+		if !ok {
+			continue
+		}
+		if sanitized[i].ItemReference == nil || !isResponsesFunctionCallID(*sanitized[i].ItemReference) {
+			sanitized[i].ItemReference = &itemID
+		}
 	}
 	return sanitized
 }
@@ -1699,8 +1721,8 @@ func sanitizeResponsesRawItems(raw json.RawMessage) json.RawMessage {
 				continue
 			}
 			itemID := decodeRawString(item["id"])
-			if itemID == "" {
-				itemID = generateResponsesItemID()
+			if !isResponsesFunctionCallID(itemID) {
+				itemID = generateResponsesFunctionCallID()
 				if b, err := json.Marshal(itemID); err == nil {
 					item["id"] = b
 					changed = true
@@ -1718,10 +1740,11 @@ func sanitizeResponsesRawItems(raw json.RawMessage) json.RawMessage {
 		// Sanitize function_call_output: add missing item_reference
 		if itemType == "function_call_output" {
 			refRaw, hasRef := item["item_reference"]
+			refValue := decodeRawString(refRaw)
 			refMissing := !hasRef || len(bytes.TrimSpace(refRaw)) == 0 ||
 				bytes.Equal(bytes.TrimSpace(refRaw), []byte("null")) ||
 				bytes.Equal(bytes.TrimSpace(refRaw), []byte(`""`))
-			if refMissing {
+			if refMissing || !isResponsesFunctionCallID(refValue) {
 				callID := decodeRawString(item["call_id"])
 				if callID != "" {
 					if itemID, ok := callIDToItemID[callID]; ok {
@@ -1936,19 +1959,30 @@ func (o *ResponseOutbound) PassthroughConfig() model.PassthroughConfig {
 	}
 }
 
-// generateResponsesItemID generates a unique ID for Responses API items (function_call, etc.).
-// Format matches OpenAI's pattern: item_<random_base62_string>
+func generateResponsesFunctionCallID() string {
+	return generateResponsesItemIDWithPrefix("fc_")
+}
+
+func isResponsesFunctionCallID(id string) bool {
+	return strings.HasPrefix(id, "fc")
+}
+
+// generateResponsesItemID generates a unique ID for generic Responses API items.
 func generateResponsesItemID() string {
+	return generateResponsesItemIDWithPrefix("item_")
+}
+
+func generateResponsesItemIDWithPrefix(prefix string) string {
 	b := make([]byte, 24)
 	if _, err := rand.Read(b); err != nil {
 		// fallback: use timestamp + counter
-		return fmt.Sprintf("item_%016x%08x", time.Now().UnixNano(), itemIDCounter.Add(1))
+		return fmt.Sprintf("%s%016x%08x", prefix, time.Now().UnixNano(), itemIDCounter.Add(1))
 	}
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	for i := range b {
 		b[i] = charset[b[i]%byte(len(charset))]
 	}
-	return "item_" + string(b)
+	return prefix + string(b)
 }
 
 var itemIDCounter atomic.Uint64

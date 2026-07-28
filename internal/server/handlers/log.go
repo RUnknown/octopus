@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/bestruirui/octopus/internal/op"
+	"github.com/bestruirui/octopus/internal/relay"
 	"github.com/bestruirui/octopus/internal/server/middleware"
 	"github.com/bestruirui/octopus/internal/server/resp"
 	"github.com/bestruirui/octopus/internal/server/router"
@@ -28,8 +29,8 @@ func init() {
 				Handle(getLogSiteActionTargets),
 		).
 		AddRoute(
-			router.NewRoute("/:id", http.MethodGet).
-				Handle(getLog),
+			router.NewRoute("/active", http.MethodGet).
+				Handle(listActiveRelayRequests),
 		).
 		AddRoute(
 			router.NewRoute("/clear", http.MethodDelete).
@@ -38,6 +39,10 @@ func init() {
 		AddRoute(
 			router.NewRoute("/stream-token", http.MethodGet).
 				Handle(getStreamToken),
+		).
+		AddRoute(
+			router.NewRoute("/:id", http.MethodGet).
+				Handle(getLog),
 		)
 
 	router.NewGroupRouter("/api/v1/log").
@@ -45,6 +50,10 @@ func init() {
 			router.NewRoute("/stream", http.MethodGet).
 				Handle(streamLog),
 		)
+}
+
+func listActiveRelayRequests(c *gin.Context) {
+	resp.Success(c, gin.H{"requests": relay.ListActiveRequests()})
 }
 
 func listLog(c *gin.Context) {

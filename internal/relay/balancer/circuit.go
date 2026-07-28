@@ -26,6 +26,19 @@ const (
 	FailureSoftRateLimit
 )
 
+func (s CircuitState) String() string {
+	switch s {
+	case StateClosed:
+		return "closed"
+	case StateOpen:
+		return "open"
+	case StateHalfOpen:
+		return "half_open"
+	default:
+		return "unknown"
+	}
+}
+
 // circuitEntry 单个熔断器条目
 type circuitEntry struct {
 	State               CircuitState
@@ -216,9 +229,66 @@ type CircuitSnapshot struct {
 	ChannelKeyID        int    `json:"channel_key_id"`
 	ModelName           string `json:"model_name"`
 	State               string `json:"state"`
+	StateName           string `json:"state_name,omitempty"`
+	Tripped             bool   `json:"tripped"`
 	ConsecutiveFailures int64  `json:"consecutive_failures"`
 	TripCount           int    `json:"trip_count"`
 	RemainingCooldownMS int64  `json:"remaining_cooldown_ms"`
+	LastFailureUnix     int64  `json:"last_failure_unix,omitempty"`
+	CooldownSeconds     int    `json:"cooldown_seconds,omitempty"`
+	RecoverAtUnix       int64  `json:"recover_at_unix,omitempty"`
+	HalfOpenSinceUnix   int64  `json:"half_open_since_unix,omitempty"`
+}
+
+// InspectCircuit returns a read-only circuit breaker snapshot without moving Open to HalfOpen.
+func InspectCircuit(channelID, keyID int, modelName string) CircuitSnapshot {
+	key := circuitKey(channelID, keyID, modelName)
+	value, ok := globalBreaker.Load(key)
+	if !ok {
+		return CircuitSnapshot{ChannelID: channelID, ChannelKeyID: keyID, ModelName: modelName, State: StateClosed.String(), StateName: StateClosed.String()}
+	}
+	entry, ok := value.(*circuitEntry)
+	if !ok || entry == nil {
+		return CircuitSnapshot{ChannelID: channelID, ChannelKeyID: keyID, ModelName: modelName, State: StateClosed.String(), StateName: StateClosed.String()}
+	}
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	return circuitSnapshotLocked(channelID, keyID, modelName, entry, time.Now())
+}
+
+func circuitSnapshotLocked(channelID, keyID int, modelName string, entry *circuitEntry, now time.Time) CircuitSnapshot {
+	stateName := entry.State.String()
+	snapshot := CircuitSnapshot{
+		ChannelID:           channelID,
+		ChannelKeyID:        keyID,
+		ModelName:           modelName,
+		State:               stateName,
+		StateName:           stateName,
+		ConsecutiveFailures: entry.ConsecutiveFailures,
+		TripCount:           entry.TripCount,
+	}
+	if !entry.LastFailureTime.IsZero() {
+		snapshot.LastFailureUnix = entry.LastFailureTime.Unix()
+	}
+	if !entry.HalfOpenSince.IsZero() {
+		snapshot.HalfOpenSinceUnix = entry.HalfOpenSince.Unix()
+	}
+	switch entry.State {
+	case StateOpen:
+		remaining := GetCooldown(entry.TripCount) - now.Sub(entry.LastFailureTime)
+		if remaining < 0 {
+			remaining = 0
+		}
+		snapshot.Tripped = remaining > 0
+		snapshot.RemainingCooldownMS = remaining.Milliseconds()
+		snapshot.CooldownSeconds = int(remaining.Seconds())
+		if remaining > 0 {
+			snapshot.RecoverAtUnix = now.Add(remaining).Unix()
+		}
+	case StateHalfOpen:
+		snapshot.Tripped = true
+	}
+	return snapshot
 }
 
 func ListCircuitSnapshots() []CircuitSnapshot {
