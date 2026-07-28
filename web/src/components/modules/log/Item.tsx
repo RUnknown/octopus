@@ -107,6 +107,11 @@ function mergeAdjacentAttempts(attempts: ChannelAttempt[]): MergedAttempt[] {
             && last.channel_key_id === a.channel_key_id
             && last.model_name === a.model_name
             && last.status === a.status
+            && last.http_status === a.http_status
+            && last.retryable === a.retryable
+            && (last.reason ?? '') === (a.reason ?? '')
+            && last.cooldown_until === a.cooldown_until
+            && last.cooldown_seconds === a.cooldown_seconds
             && (last.msg ?? '') === (a.msg ?? '')
         ) {
             last.repeat += 1;
@@ -861,6 +866,11 @@ export function LogCard({ log, siteTargets }: { log: RelayLog; siteTargets: LogS
                                                                             && last.channel_key_id === a.channel_key_id
                                                                             && last.model_name === a.model_name
                                                                             && last.status === a.status
+                                                                            && last.http_status === a.http_status
+                                                                            && last.retryable === a.retryable
+                                                                            && (last.reason ?? '') === (a.reason ?? '')
+                                                                            && last.cooldown_until === a.cooldown_until
+                                                                            && last.cooldown_seconds === a.cooldown_seconds
                                                                             && (last.msg ?? '') === (a.msg ?? '')
                                                                         ) {
                                                                             last.repeat += 1;
@@ -930,6 +940,29 @@ export function LogCard({ log, siteTargets }: { log: RelayLog; siteTargets: LogS
                                                                                         ) : null}
                                                                                     </div>
                                                                                 </div>
+                                                                                {(attempt.http_status || attempt.reason || attempt.retryable !== undefined || attempt.cooldown_seconds || attempt.cooldown_until) ? (
+                                                                                    <div className="flex flex-wrap items-center gap-1.5 pl-7 text-[11px] text-muted-foreground">
+                                                                                        {attempt.http_status ? (
+                                                                                            <Badge variant="outline" className="h-5 px-1.5 text-[10px] font-mono">
+                                                                                                {t('httpStatus')} {attempt.http_status}
+                                                                                            </Badge>
+                                                                                        ) : null}
+                                                                                        {attempt.retryable !== undefined ? (
+                                                                                            <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                                                                                                {t('retryable')}: {attempt.retryable ? t('retryableYes') : t('retryableNo')}
+                                                                                            </Badge>
+                                                                                        ) : null}
+                                                                                        {attempt.cooldown_seconds ? (
+                                                                                            <span>{t('cooldown')}: <span className="font-mono text-foreground">{formatDuration(attempt.cooldown_seconds * 1000)}</span></span>
+                                                                                        ) : null}
+                                                                                        {attempt.cooldown_until ? (
+                                                                                            <span>{t('recoverAt')}: <span className="text-foreground">{formatTime(attempt.cooldown_until)}</span></span>
+                                                                                        ) : null}
+                                                                                        {attempt.reason && attempt.reason !== attempt.msg ? (
+                                                                                            <span>{t('reason')}: <span className="text-foreground">{attempt.reason}</span></span>
+                                                                                        ) : null}
+                                                                                    </div>
+                                                                                ) : null}
                                                                                 {sanitizedMsg ? (
                                                                                     <div className={cn('pl-2 border-l-2 text-[11px] leading-relaxed whitespace-pre-wrap wrap-break-word', statusMeta.messageClassName)}>
                                                                                         {sanitizedMsg}

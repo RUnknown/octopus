@@ -165,6 +165,88 @@ export interface GroupAutoGroupRunRequest {
     channel_ids?: number[];
 }
 
+export interface RouteCircuitSnapshot {
+    state?: string;
+    state_name?: string;
+    tripped?: boolean;
+    consecutive_failures?: number;
+    trip_count?: number;
+    remaining_cooldown_ms?: number;
+    recover_at_unix?: number;
+    cooldown_seconds?: number;
+}
+
+export interface RouteProtocolCapability {
+    client_protocol: string;
+    upstream_protocol: string;
+    supported: boolean;
+    support: string;
+    mode: string;
+    native_passthrough: boolean;
+    lossy_reasons?: string[];
+    missing_reason?: string;
+}
+
+export interface GroupRouteKeyState {
+    key_id: number;
+    remark?: string;
+    enabled: boolean;
+    available: boolean;
+    circuit: RouteCircuitSnapshot;
+    reason?: string;
+}
+
+export interface GroupRouteCandidateState {
+    group_item_id: number;
+    channel_id: number;
+    channel_name: string;
+    model_name: string;
+    priority: number;
+    weight: number;
+    enabled: boolean;
+    available: boolean;
+    sticky?: boolean;
+    key_count: number;
+    available_key_count: number;
+    reason?: string;
+    recover_at_unix?: number;
+    cooldown_seconds?: number;
+    upstream_protocol?: string;
+    protocol_supported?: boolean;
+    protocol_reason?: string;
+    transform_mode?: string;
+    protocol_capability?: RouteProtocolCapability;
+    protocol_capabilities?: RouteProtocolCapability[];
+    keys?: GroupRouteKeyState[];
+}
+
+export interface GroupRouteStickyState {
+    channel_id: number;
+    channel_key_id: number;
+    expires_at: number;
+}
+
+export interface GroupRouteState {
+    group_id: number;
+    group_name: string;
+    request_model: string;
+    client_protocol?: string;
+    mode: GroupMode;
+    candidate_count: number;
+    available_count: number;
+    protocol_available_count?: number;
+    next_channel_id?: number;
+    next_model_name?: string;
+    next_protocol_channel_id?: number;
+    next_protocol_model_name?: string;
+    exact_order: boolean;
+    order_note?: string;
+    sticky?: GroupRouteStickyState;
+    candidates: GroupRouteCandidateState[];
+}
+
+export type ClientProtocol = 'openai_chat' | 'openai_responses' | 'anthropic' | 'codex_responses' | 'openai_embeddings' | 'gemini';
+
 /**
  * 获取分组列表 Hook
  * 
@@ -183,6 +265,21 @@ export function useGroupList() {
             return apiClient.get<Group[]>('/api/v1/group/list');
         },
         refetchInterval: 30000,
+    });
+}
+
+export function useGroupRouteState(groupID: number | undefined, protocol?: ClientProtocol, enabled = false) {
+    return useQuery({
+        queryKey: ['groups', 'route-state', groupID, protocol ?? null],
+        queryFn: async () => {
+            const search = new URLSearchParams();
+            if (protocol) search.set('client_protocol', protocol);
+            const suffix = search.toString() ? `?${search.toString()}` : '';
+            return apiClient.get<GroupRouteState>(`/api/v1/group/route-state/${groupID}${suffix}`);
+        },
+        enabled: enabled && typeof groupID === 'number' && groupID > 0,
+        refetchInterval: enabled ? 5000 : false,
+        refetchOnWindowFocus: false,
     });
 }
 
