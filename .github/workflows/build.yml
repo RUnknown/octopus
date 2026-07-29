@@ -61,7 +61,7 @@ jobs:
           COMMIT_ID="$(git rev-parse --short HEAD)"
           LDFLAGS="-X 'github.com/bestruirui/octopus/internal/conf.Version=${GIT_VERSION}' \
                    -X 'github.com/bestruirui/octopus/internal/conf.BuildTime=${BUILD_TIME}' \
-                   -X 'github.com/bestruirui/octopus/internal/conf.Author=tianxia3111' \
+                   -X 'github.com/bestruirui/octopus/internal/conf.Author=${{ github.repository_owner }}' \
                    -X 'github.com/bestruirui/octopus/internal/conf.Commit=${COMMIT_ID}' \
                    -X 'github.com/bestruirui/octopus/internal/conf.Repo=https://github.com/${{ github.repository }}' \
                    -s -w"

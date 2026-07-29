@@ -19,10 +19,24 @@ import (
 	"github.com/bestruirui/octopus/internal/utils/log"
 )
 
-const (
-	updateUrl    = "https://github.com/tianxia3111/octopus/releases/latest/download"
-	updateApiUrl = "https://api.github.com/repos/tianxia3111/octopus/releases/latest"
+const defaultRepoSlug = "mingtian886/octopus"
+
+// updateUrl 与 updateApiUrl 从 conf.Repo 推导，避免仓库地址在多处硬编码后失去同步。
+var (
+	updateUrl    = "https://github.com/" + repoSlug() + "/releases/latest/download"
+	updateApiUrl = "https://api.github.com/repos/" + repoSlug() + "/releases/latest"
 )
+
+// repoSlug 从 conf.Repo 中解析 owner/repo；解析失败时回退到默认仓库。
+func repoSlug() string {
+	slug := strings.TrimSuffix(strings.TrimSpace(conf.Repo), "/")
+	slug = strings.TrimPrefix(slug, "https://github.com/")
+	slug = strings.TrimPrefix(slug, "http://github.com/")
+	if slug == "" || strings.Contains(slug, "://") || strings.Count(slug, "/") != 1 {
+		return defaultRepoSlug
+	}
+	return slug
+}
 
 type LatestInfo struct {
 	TagName     string `json:"tag_name"`
