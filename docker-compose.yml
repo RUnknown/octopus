@@ -1,9 +1,10 @@
 services:
   octopus:
     image: ghcr.io/mingtian886/octopus:latest
+    pull_policy: always
     ports:
        - '8080:8080'
     volumes:      
-       - '/path/to/data:/app/data'
+       - '/vol1/1000/docker/zijiapi:/app/data'
     container_name: octopus
     restart: unless-stopped
