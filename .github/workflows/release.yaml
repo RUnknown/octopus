@@ -1,4 +1,4 @@
-name: release
+name: 发布 Docker 镜像
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing v* tag to publish
+        description: 要发布的现有 v* 标签
         required: true
         type: string
 
@@ -17,114 +17,114 @@ env:
 permissions:
   contents: write
   packages: write
-  
+
 jobs:
-  release:
-    name: release
+  docker:
+    name: 发布 Docker（多架构）
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: 检出发布标签
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
           ref: ${{ env.RELEASE_TAG }}
 
-      - name: Validate release tag
+      - name: 校验发布标签
         shell: bash
         run: |
           case "${RELEASE_TAG}" in
             v*) ;;
-            *) echo "Release tag must start with v: ${RELEASE_TAG}" >&2; exit 1 ;;
+            *) echo "发布标签必须以 v 开头：${RELEASE_TAG}" >&2; exit 1 ;;
           esac
           git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}"
 
-      - name: Setup Go
+      - name: 设置 Go
         uses: actions/setup-go@v6
         with:
-          go-version: 'stable'
-    
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.13'
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
 
-      - name: Setup pnpm
+      - name: 设置 pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 'latest'
+          version: latest
 
-      - name: Setup Node.js
+      - name: 设置 Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 'latest'
-          cache: 'pnpm'
+          node-version: 22
+          cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
 
-      - name: Build
-        run: bash scripts/build.sh release
+      - name: 构建前端
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          NEXT_PUBLIC_APP_VERSION="${RELEASE_TAG}" \
+          NEXT_PUBLIC_GITHUB_REPO="https://github.com/${{ github.repository }}" \
+          pnpm build
 
-      - name: Upload Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: build/archives/*
-          fail_on_unmatched_files: true
-          generate_release_notes: true
-          prerelease: false
-          tag_name: ${{ env.RELEASE_TAG }}
+      - name: 嵌入前端静态文件
+        run: |
+          rm -rf static/out
+          mv web/out static/out
 
-      - name: Docker meta (Debian)
-        id: meta-debian
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ghcr.io/${{ github.repository }}
-          tags: |
-            type=raw,value=latest
-            type=raw,value=${{ env.RELEASE_TAG }}
+      - name: 构建 Docker 所需的 Linux 二进制
+        run: |
+          set -e
+          mkdir -p build/docker/linux/amd64 build/docker/linux/386 build/docker/linux/arm64 build/docker/linux/arm/v7
+          BUILD_TIME="$(TZ='Asia/Shanghai' date +'%F %T %z')"
+          COMMIT_ID="$(git rev-parse --short HEAD)"
+          LDFLAGS="-X 'github.com/bestruirui/octopus/internal/conf.Version=${RELEASE_TAG}' \
+                   -X 'github.com/bestruirui/octopus/internal/conf.BuildTime=${BUILD_TIME}' \
+                   -X 'github.com/bestruirui/octopus/internal/conf.Author=tianxia3111' \
+                   -X 'github.com/bestruirui/octopus/internal/conf.Commit=${COMMIT_ID}' \
+                   -X 'github.com/bestruirui/octopus/internal/conf.Repo=https://github.com/${{ github.repository }}' \
+                   -s -w"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags=jsoniter -ldflags="${LDFLAGS}" -o build/docker/linux/amd64/octopus .
+          CGO_ENABLED=0 GOOS=linux GOARCH=386 go build -tags=jsoniter -ldflags="${LDFLAGS}" -o build/docker/linux/386/octopus .
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -tags=jsoniter -ldflags="${LDFLAGS}" -o build/docker/linux/arm64/octopus .
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -tags=jsoniter -ldflags="${LDFLAGS}" -o build/docker/linux/arm/v7/octopus .
 
-      - name: Docker meta (Alpine)
-        id: meta-alpine
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ghcr.io/${{ github.repository }}
-          tags: |
-            type=raw,value=latest-alpine
-            type=raw,value=${{ env.RELEASE_TAG }}-alpine
-
-      - name: Set up QEMU
+      - name: 设置 QEMU
         uses: docker/setup-qemu-action@v3
 
-      - name: Set up Docker Buildx
+      - name: 设置 Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to GitHub Container Registry
+      - name: 登录 GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push (Alpine)
-        uses: docker/build-push-action@v5
+      - name: 构建并推送 Alpine Docker 镜像
+        uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./scripts/dockerfiles/Dockerfile.alpine
+          file: scripts/dockerfiles/Dockerfile.alpine
           push: true
-          platforms: linux/amd64,linux/i386,linux/arm64,linux/arm/v7
-          tags: ${{ steps.meta-alpine.outputs.tags }}
-          labels: ${{ steps.meta-alpine.outputs.labels }}
-          build-args: |
-            TARGETPLATFORM
+          platforms: linux/amd64,linux/386,linux/arm64,linux/arm/v7
+          tags: |
+            ghcr.io/${{ github.repository }}:latest-alpine
+            ghcr.io/${{ github.repository }}:${{ env.RELEASE_TAG }}-alpine
+          provenance: false
 
-      - name: Build and push (Debian)
-        uses: docker/build-push-action@v5
+      - name: 构建并推送 Debian Docker 镜像
+        uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./scripts/dockerfiles/Dockerfile.debian
+          file: scripts/dockerfiles/Dockerfile.debian
           push: true
-          platforms: linux/amd64,linux/i386,linux/arm64,linux/arm/v7
-          tags: ${{ steps.meta-debian.outputs.tags }}
-          labels: ${{ steps.meta-debian.outputs.labels }}
-          build-args: |
-            TARGETPLATFORM
+          platforms: linux/amd64,linux/386,linux/arm64,linux/arm/v7
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ env.RELEASE_TAG }}
+          provenance: false
+
+      - name: 创建 GitHub Release（无二进制附件）
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          tag_name: ${{ env.RELEASE_TAG }}

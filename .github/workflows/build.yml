@@ -1,4 +1,4 @@
-name: Build
+name: 构建 Docker
 
 on:
   workflow_dispatch:
@@ -9,54 +9,53 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: build
+  docker:
+    name: Docker（多架构）
     if: >
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
        contains(github.event.pull_request.labels.*.name, 'build'))
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: 检出代码
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          fetch-tags: true
           persist-credentials: false
 
-      - name: Setup Go
+      - name: 设置 Go
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
-      - name: Setup pnpm
+      - name: 设置 pnpm
         uses: pnpm/action-setup@v4
         with:
           version: latest
 
-      - name: Setup Node.js
+      - name: 设置 Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
 
-      - name: Build frontend
+      - name: 构建前端
         working-directory: web
         run: |
           pnpm install --frozen-lockfile
           NEXT_PUBLIC_APP_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo 'dev')" pnpm build
 
-      - name: Embed frontend into static
+      - name: 嵌入前端静态文件
         run: |
           rm -rf static/out
           mv web/out static/out
 
-      - name: Build binaries
+      - name: 构建 Docker 所需的 Linux 二进制
         run: |
           set -e
-          mkdir -p build/bin build/docker/linux/amd64 build/docker/linux/arm64
+          mkdir -p build/docker/linux/amd64 build/docker/linux/386 build/docker/linux/arm64 build/docker/linux/arm/v7
           BUILD_TIME="$(TZ='Asia/Shanghai' date +'%F %T %z')"
           GIT_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo 'dev')"
           COMMIT_ID="$(git rev-parse --short HEAD)"
@@ -66,86 +65,29 @@ jobs:
                    -X 'github.com/bestruirui/octopus/internal/conf.Commit=${COMMIT_ID}' \
                    -X 'github.com/bestruirui/octopus/internal/conf.Repo=https://github.com/${{ github.repository }}' \
                    -s -w"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags=jsoniter -ldflags="${LDFLAGS}" -o build/docker/linux/amd64/octopus .
+          CGO_ENABLED=0 GOOS=linux GOARCH=386 go build -tags=jsoniter -ldflags="${LDFLAGS}" -o build/docker/linux/386/octopus .
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -tags=jsoniter -ldflags="${LDFLAGS}" -o build/docker/linux/arm64/octopus .
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -tags=jsoniter -ldflags="${LDFLAGS}" -o build/docker/linux/arm/v7/octopus .
 
-          GOOS=linux   GOARCH=amd64 CGO_ENABLED=0 go build -o build/bin/octopus-linux-x86_64        -ldflags="${LDFLAGS}" -tags=jsoniter ./
-          GOOS=linux   GOARCH=arm64 CGO_ENABLED=0 go build -o build/bin/octopus-linux-arm64         -ldflags="${LDFLAGS}" -tags=jsoniter ./
-          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o build/bin/octopus-windows-x86_64.exe  -ldflags="${LDFLAGS}" -tags=jsoniter ./
-          GOOS=darwin  GOARCH=arm64 CGO_ENABLED=0 go build -o build/bin/octopus-darwin-arm64        -ldflags="${LDFLAGS}" -tags=jsoniter ./
-
-          cp build/bin/octopus-linux-x86_64 build/docker/linux/amd64/octopus
-          cp build/bin/octopus-linux-arm64  build/docker/linux/arm64/octopus
-
-      - name: Upload binaries
-        uses: actions/upload-artifact@v4
-        with:
-          name: octopus-binaries-${{ github.sha }}
-          path: build/bin/
-          retention-days: 7
-          if-no-files-found: error
-
-      - name: Set up QEMU
+      - name: 设置 QEMU
         uses: docker/setup-qemu-action@v3
 
-      - name: Set up Docker Buildx
+      - name: 设置 Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Docker image (Alpine amd64)
-        uses: docker/build-push-action@v5
+      - name: 验证 Debian Docker 镜像
+        uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./scripts/dockerfiles/Dockerfile.alpine
-          platforms: linux/amd64
-          load: true
-          tags: octopus:ci-${{ github.sha }}-alpine-amd64
-          build-args: |
-            TARGETPLATFORM=linux/amd64
+          file: scripts/dockerfiles/Dockerfile.debian
+          platforms: linux/amd64,linux/386,linux/arm64,linux/arm/v7
+          outputs: type=cacheonly
 
-      - name: Build Docker image (Alpine arm64)
-        uses: docker/build-push-action@v5
+      - name: 验证 Alpine Docker 镜像
+        uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./scripts/dockerfiles/Dockerfile.alpine
-          platforms: linux/arm64
-          load: true
-          tags: octopus:ci-${{ github.sha }}-alpine-arm64
-          build-args: |
-            TARGETPLATFORM=linux/arm64
-
-      - name: Build Docker image (Debian amd64)
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./scripts/dockerfiles/Dockerfile.debian
-          platforms: linux/amd64
-          load: true
-          tags: octopus:ci-${{ github.sha }}-debian-amd64
-          build-args: |
-            TARGETPLATFORM=linux/amd64
-
-      - name: Build Docker image (Debian arm64)
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./scripts/dockerfiles/Dockerfile.debian
-          platforms: linux/arm64
-          load: true
-          tags: octopus:ci-${{ github.sha }}-debian-arm64
-          build-args: |
-            TARGETPLATFORM=linux/arm64
-
-      - name: Export Docker images
-        run: |
-          set -e
-          mkdir -p build/docker-images
-          docker save octopus:ci-${{ github.sha }}-alpine-amd64 | gzip > build/docker-images/octopus-alpine-amd64.tar.gz
-          docker save octopus:ci-${{ github.sha }}-alpine-arm64 | gzip > build/docker-images/octopus-alpine-arm64.tar.gz
-          docker save octopus:ci-${{ github.sha }}-debian-amd64 | gzip > build/docker-images/octopus-debian-amd64.tar.gz
-          docker save octopus:ci-${{ github.sha }}-debian-arm64 | gzip > build/docker-images/octopus-debian-arm64.tar.gz
-
-      - name: Upload Docker images
-        uses: actions/upload-artifact@v4
-        with:
-          name: octopus-docker-${{ github.sha }}
-          path: build/docker-images/
-          retention-days: 7
-          if-no-files-found: error
+          file: scripts/dockerfiles/Dockerfile.alpine
+          platforms: linux/amd64,linux/386,linux/arm64,linux/arm/v7
+          outputs: type=cacheonly

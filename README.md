@@ -1,10 +1,10 @@
 # Octopus
 
-Octopus is a self-hosted LLM API gateway and management console for individuals and small teams. It places multiple model providers and relay services behind a unified set of compatible APIs, with channel management, protocol transformation, load balancing, failover, cache statistics, and request diagnostics.
+Octopus 是一个面向个人和小团队的自托管 LLM API 网关与管理控制台。它将多个模型供应商和中转服务统一到一组兼容 API 后面，并提供渠道管理、协议转换、负载均衡、故障转移、缓存统计和请求诊断。
 
-This repository is derived from [`tianxia3111/octopus`](https://github.com/tianxia3111/octopus), which is based on [`bestruirui/octopus`](https://github.com/bestruirui/octopus). This fork focuses on site synchronization, OpenAI Responses, WebSocket relay, observability, and route diagnostics.
+本仓库从 [`tianxia3111/octopus`](https://github.com/tianxia3111/octopus) 派生，项目源自 [`bestruirui/octopus`](https://github.com/bestruirui/octopus)。当前分支重点增强了站点同步、OpenAI Responses、WebSocket Relay、可观测性和路由诊断。
 
-中文文档：[README_zh.md](README_zh.md)
+主文档使用中文；[README_zh.md](README_zh.md) 保留为兼容入口。
 
 ## Highlights
 
@@ -66,9 +66,9 @@ The Next.js frontend is statically exported and embedded into the Go binary, so 
 
 ## Quick start
 
-### Existing Docker image
+### 使用 Docker 镜像
 
-The repository currently inherits the image maintained by the parent fork:
+镜像由本仓库的 GitHub Actions 发布：
 
 ```bash
 docker run -d \
@@ -76,16 +76,16 @@ docker run -d \
   -p 8080:8080 \
   -v /path/to/data:/app/data \
   --restart unless-stopped \
-  ghcr.io/tianxia3111/octopus:latest
+  ghcr.io/mingtian886/octopus:latest
 ```
 
-Alternatively, update the data path in [`docker-compose.yml`](docker-compose.yml), then run:
+也可以修改 [`docker-compose.yml`](docker-compose.yml) 中的数据目录后运行：
 
 ```bash
 docker compose up -d
 ```
 
-The inherited image may not contain the latest unreleased commits from this fork. Build from source when you need the current repository state.
+每个版本都会同时发布 `latest`、版本标签和 Alpine 变体；需要固定版本时使用 `ghcr.io/mingtian886/octopus:vX.Y.Z`。
 
 ### Run from source
 

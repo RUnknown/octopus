@@ -1,6 +1,6 @@
 services:
   octopus:
-    image: ghcr.io/tianxia3111/octopus:latest
+    image: ghcr.io/mingtian886/octopus:latest
     ports:
        - '8080:8080'
     volumes:      

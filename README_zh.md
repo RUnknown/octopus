@@ -68,7 +68,7 @@ English: [README.md](README.md)
 
 ### 使用现有 Docker 镜像
 
-仓库当前 Compose 配置沿用派生仓库镜像：
+镜像由本仓库的 GitHub Actions 发布：
 
 ```bash
 docker run -d \
@@ -76,7 +76,7 @@ docker run -d \
   -p 8080:8080 \
   -v /path/to/data:/app/data \
   --restart unless-stopped \
-  ghcr.io/tianxia3111/octopus:latest
+  ghcr.io/mingtian886/octopus:latest
 ```
 
 也可以修改 [`docker-compose.yml`](docker-compose.yml) 中的数据目录后运行：
@@ -85,7 +85,7 @@ docker run -d \
 docker compose up -d
 ```
 
-该镜像由派生仓库维护，可能不包含本 fork 尚未发布的最新提交。需要运行本仓库最新代码时，请从源码构建。
+每个版本都会同时发布 `latest`、版本标签和 Alpine 变体；需要固定版本时使用 `ghcr.io/mingtian886/octopus:vX.Y.Z`。
 
 ### 从源码运行
 
