@@ -2,6 +2,7 @@ package openai
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/bestruirui/octopus/internal/transformer/model"
@@ -47,8 +48,8 @@ func TestConvertInputFromMessagesGeneratesFunctionCallIDAndItemReference(t *test
 	if functionCall.ID == "" {
 		t.Error("function_call item missing ID")
 	}
-	if !isResponsesFunctionCallID(functionCall.ID) {
-		t.Errorf("function_call id should use fc prefix, got %s", functionCall.ID)
+	if !strings.HasPrefix(functionCall.ID, "fc_") {
+		t.Errorf("generated function_call id should use fc_ prefix, got %s", functionCall.ID)
 	}
 	if functionCall.CallID != "call_abc123" {
 		t.Errorf("expected call_id=call_abc123, got %s", functionCall.CallID)
@@ -105,8 +106,8 @@ func TestSanitizeResponsesRawItemsAddsItemReference(t *testing.T) {
 	if !ok {
 		t.Fatal("function_call_output missing item_reference after sanitization")
 	}
-	if !isResponsesFunctionCallID(itemRef) {
-		t.Errorf("expected item_reference to use fc prefix, got %s", itemRef)
+	if itemRef != "item_xyz789" {
+		t.Errorf("expected existing opaque item id to be preserved, got %s", itemRef)
 	}
 	if items[0]["id"] != itemRef {
 		t.Errorf("expected function_call id and output item_reference to match, got id=%v ref=%s", items[0]["id"], itemRef)
@@ -168,8 +169,8 @@ func TestSanitizeResponsesRawItemsBackfillsMissingFunctionCallID(t *testing.T) {
 	if !ok || generatedID == "" {
 		t.Fatal("function_call missing generated id")
 	}
-	if !isResponsesFunctionCallID(generatedID) {
-		t.Fatalf("function_call id should use fc prefix, got %s", generatedID)
+	if !strings.HasPrefix(generatedID, "fc_") {
+		t.Fatalf("generated function_call id should use fc_ prefix, got %s", generatedID)
 	}
 
 	ref, ok := items[1]["item_reference"].(string)
@@ -181,7 +182,7 @@ func TestSanitizeResponsesRawItemsBackfillsMissingFunctionCallID(t *testing.T) {
 	}
 }
 
-func TestSanitizeResponsesRawItemsNormalizesInvalidFunctionCallIDPrefix(t *testing.T) {
+func TestSanitizeResponsesRawItemsPreservesOpaqueFunctionCallID(t *testing.T) {
 	rawItems := json.RawMessage(`[
 		{"id":"item_badprefix","type":"function_call","call_id":"call_bad","name":"lookup","arguments":"{}"},
 		{"type":"function_call_output","call_id":"call_bad","item_reference":"item_badprefix","output":{"text":"ok"}}
@@ -195,8 +196,8 @@ func TestSanitizeResponsesRawItemsNormalizesInvalidFunctionCallIDPrefix(t *testi
 	}
 
 	functionCallID, ok := items[0]["id"].(string)
-	if !ok || !isResponsesFunctionCallID(functionCallID) {
-		t.Fatalf("expected normalized fc id, got %v", items[0]["id"])
+	if !ok || functionCallID != "item_badprefix" {
+		t.Fatalf("expected opaque function_call id to be preserved, got %v", items[0]["id"])
 	}
 	ref, ok := items[1]["item_reference"].(string)
 	if !ok || ref != functionCallID {
@@ -264,8 +265,8 @@ func TestMarshalResponsesInputItemsPreservesItemReference(t *testing.T) {
 	if functionCallID == "" {
 		t.Fatal("function_call item has empty id")
 	}
-	if !isResponsesFunctionCallID(functionCallID) {
-		t.Fatalf("function_call id should use fc prefix, got %s", functionCallID)
+	if !strings.HasPrefix(functionCallID, "fc_") {
+		t.Fatalf("generated function_call id should use fc_ prefix, got %s", functionCallID)
 	}
 	if !foundOutput {
 		t.Fatal("function_call_output item missing item_reference")

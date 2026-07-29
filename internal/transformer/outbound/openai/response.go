@@ -1639,7 +1639,7 @@ func sanitizeResponsesItems(items []ResponsesItem) []ResponsesItem {
 		ensureResponsesReasoningSummary(&sanitized[i])
 		ensureResponsesRefusalShape(&sanitized[i])
 		if sanitized[i].Type == "function_call" && sanitized[i].CallID != "" {
-			if !isResponsesFunctionCallID(sanitized[i].ID) {
+			if sanitized[i].ID == "" {
 				sanitized[i].ID = generateResponsesFunctionCallID()
 			}
 			callIDToItemID[sanitized[i].CallID] = sanitized[i].ID
@@ -1656,7 +1656,7 @@ func sanitizeResponsesItems(items []ResponsesItem) []ResponsesItem {
 		if !ok {
 			continue
 		}
-		if sanitized[i].ItemReference == nil || !isResponsesFunctionCallID(*sanitized[i].ItemReference) {
+		if sanitized[i].ItemReference == nil || strings.TrimSpace(*sanitized[i].ItemReference) == "" {
 			sanitized[i].ItemReference = &itemID
 		}
 	}
@@ -1721,7 +1721,7 @@ func sanitizeResponsesRawItems(raw json.RawMessage) json.RawMessage {
 				continue
 			}
 			itemID := decodeRawString(item["id"])
-			if !isResponsesFunctionCallID(itemID) {
+			if itemID == "" {
 				itemID = generateResponsesFunctionCallID()
 				if b, err := json.Marshal(itemID); err == nil {
 					item["id"] = b
@@ -1740,11 +1740,10 @@ func sanitizeResponsesRawItems(raw json.RawMessage) json.RawMessage {
 		// Sanitize function_call_output: add missing item_reference
 		if itemType == "function_call_output" {
 			refRaw, hasRef := item["item_reference"]
-			refValue := decodeRawString(refRaw)
 			refMissing := !hasRef || len(bytes.TrimSpace(refRaw)) == 0 ||
 				bytes.Equal(bytes.TrimSpace(refRaw), []byte("null")) ||
 				bytes.Equal(bytes.TrimSpace(refRaw), []byte(`""`))
-			if refMissing || !isResponsesFunctionCallID(refValue) {
+			if refMissing {
 				callID := decodeRawString(item["call_id"])
 				if callID != "" {
 					if itemID, ok := callIDToItemID[callID]; ok {
@@ -1961,10 +1960,6 @@ func (o *ResponseOutbound) PassthroughConfig() model.PassthroughConfig {
 
 func generateResponsesFunctionCallID() string {
 	return generateResponsesItemIDWithPrefix("fc_")
-}
-
-func isResponsesFunctionCallID(id string) bool {
-	return strings.HasPrefix(id, "fc")
 }
 
 // generateResponsesItemID generates a unique ID for generic Responses API items.

@@ -30,7 +30,7 @@ func PreviewCandidates(group model.Group) CandidatePreview {
 		for i := range items {
 			ordered[i] = items[(idx+i)%len(items)]
 		}
-		return CandidatePreview{Items: ordered, Exact: true, Note: "next round-robin order"}
+		return CandidatePreview{Items: ordered, Exact: false, Note: "round-robin snapshot; concurrent requests may change the next route"}
 	case model.GroupModeFailover:
 		return CandidatePreview{Items: sortByPriority(items), Exact: true, Note: "priority order"}
 	case model.GroupModeWeighted:

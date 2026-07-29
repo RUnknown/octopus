@@ -87,6 +87,8 @@ func HandleResponsesCompact(c *gin.Context) {
 
 	metricsReq := &transformerModel.InternalLLMRequest{Model: requestModel, RawRequest: body}
 	metrics := NewRelayMetrics(apiKeyID, requestModel, body, metricsReq)
+	activeRequestID := beginActiveRequest(apiKeyID, requestModel, false)
+	defer finishActiveRequest(activeRequestID)
 
 	var lastErr error
 	var lastStatusCode int
@@ -101,6 +103,11 @@ func HandleResponsesCompact(c *gin.Context) {
 	}
 
 	for iter.Next() {
+		updateActiveRequest(activeRequestID, func(view *ActiveRequestView) {
+			view.Stage = "select_candidate"
+			view.Attempt = iter.Index() + 1
+			view.GroupID = group.ID
+		})
 		select {
 		case <-c.Request.Context().Done():
 			log.Infof("compact request context canceled, stopping retry")
@@ -110,6 +117,11 @@ func HandleResponsesCompact(c *gin.Context) {
 		}
 
 		item := iter.Item()
+		updateActiveRequest(activeRequestID, func(view *ActiveRequestView) {
+			view.ChannelID = item.ChannelID
+			view.ActualModel = item.ModelName
+			view.LastMessage = "compact candidate selected"
+		})
 		channel, err := op.ChannelGet(item.ChannelID, c.Request.Context())
 		if err != nil {
 			iter.Skip(item.ChannelID, 0, fmt.Sprintf("channel_%d", item.ChannelID), fmt.Sprintf("channel not found: %v", err))
@@ -147,6 +159,14 @@ func HandleResponsesCompact(c *gin.Context) {
 			}
 			continue
 		}
+		updateActiveRequest(activeRequestID, func(view *ActiveRequestView) {
+			view.Stage = "forwarding"
+			view.ChannelID = channel.ID
+			view.ChannelKeyID = usedKey.ID
+			view.ChannelName = channel.Name
+			view.ActualModel = item.ModelName
+			view.LastMessage = "upstream compact request in progress"
+		})
 
 		var attemptErr error
 		var statusCode int
@@ -155,6 +175,11 @@ func HandleResponsesCompact(c *gin.Context) {
 
 		for retryNum := 0; retryNum < maxSameChannelRetries; retryNum++ {
 			if retryNum > 0 {
+				updateActiveRequest(activeRequestID, func(view *ActiveRequestView) {
+					view.Stage = "retry_backoff"
+					view.Attempt = retryNum + 1
+					view.LastMessage = "waiting before compact request retry"
+				})
 				delay := computeBackoff(retryNum, retryAfter)
 				select {
 				case <-c.Request.Context().Done():
@@ -163,6 +188,11 @@ func HandleResponsesCompact(c *gin.Context) {
 				case <-time.After(delay):
 				}
 			}
+			updateActiveRequest(activeRequestID, func(view *ActiveRequestView) {
+				view.Stage = "forwarding"
+				view.Attempt = retryNum + 1
+				view.LastMessage = "upstream compact request in progress"
+			})
 
 			statusCode, retryAfter, attemptErr = forwardResponsesCompact(c, metrics, iter, channel, usedKey, body)
 			if attemptErr == nil {
@@ -179,6 +209,10 @@ func HandleResponsesCompact(c *gin.Context) {
 		op.ChannelKeyUpdate(usedKey)
 
 		if success {
+			updateActiveRequest(activeRequestID, func(view *ActiveRequestView) {
+				view.Stage = "collecting_response"
+				view.LastMessage = "upstream compact request succeeded"
+			})
 			op.StatsChannelUpdate(channel.ID, dbmodel.StatsMetrics{RequestSuccess: 1})
 			balancer.RecordSuccess(channel.ID, usedKey.ID, requestModel)
 			balancer.SetSticky(apiKeyID, requestModel, channel.ID, usedKey.ID)
@@ -188,6 +222,12 @@ func HandleResponsesCompact(c *gin.Context) {
 		}
 
 		op.StatsChannelUpdate(channel.ID, dbmodel.StatsMetrics{RequestFailed: 1})
+		updateActiveRequest(activeRequestID, func(view *ActiveRequestView) {
+			view.Stage = "failed_attempt"
+			if attemptErr != nil {
+				view.LastMessage = attemptErr.Error()
+			}
+		})
 		failureKind := circuitFailureKind(group.RetryEnabled, statusCode)
 		balancer.RecordFailure(channel.ID, usedKey.ID, requestModel, failureKind)
 		outlierwindow.Report(channel.ID, false, statusCode, time.Now())
@@ -228,6 +268,7 @@ func forwardResponsesCompact(c *gin.Context, metrics *RelayMetrics, iter *balanc
 	span := iter.StartAttempt(channel.ID, usedKey.ID, channel.Name)
 	request, err := buildResponsesCompactRequest(c.Request.Context(), channel, usedKey.ChannelKey, requestBody)
 	if err != nil {
+		span.SetRetryable(true)
 		span.End(dbmodel.AttemptFailed, 0, err.Error())
 		return 0, 0, fmt.Errorf("failed to create compact request: %w", err)
 	}
@@ -236,6 +277,7 @@ func forwardResponsesCompact(c *gin.Context, metrics *RelayMetrics, iter *balanc
 
 	response, err := sendCompactRequest(channel, request)
 	if err != nil {
+		span.SetRetryable(true)
 		span.End(dbmodel.AttemptFailed, 0, err.Error())
 		return 0, 0, fmt.Errorf("failed to send compact request: %w", err)
 	}
@@ -244,6 +286,7 @@ func forwardResponsesCompact(c *gin.Context, metrics *RelayMetrics, iter *balanc
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		body, truncated, readErr := iolimit.ReadAtMost(response.Body, iolimit.DefaultErrorBodyMaxBytes)
 		if readErr != nil {
+			span.SetRetryable(isRetryableStatus(response.StatusCode))
 			span.End(dbmodel.AttemptFailed, response.StatusCode, readErr.Error())
 			return response.StatusCode, 0, fmt.Errorf("failed to read compact response body: %w", readErr)
 		}
@@ -252,12 +295,14 @@ func forwardResponsesCompact(c *gin.Context, metrics *RelayMetrics, iter *balanc
 		}
 		retryAfter := parseRetryAfter(response.Header.Get("Retry-After"))
 		statusCode := normalizeUpstreamStatusCode(response.StatusCode, string(body))
+		span.SetRetryable(isRetryableStatus(statusCode))
 		span.End(dbmodel.AttemptFailed, statusCode, string(body))
 		return statusCode, retryAfter, fmt.Errorf("upstream error: %d: %s", response.StatusCode, string(body))
 	}
 
 	body, readErr := iolimit.ReadAll(response.Body, iolimit.UpstreamResponseMaxBytes())
 	if readErr != nil {
+		span.SetRetryable(isRetryableStatus(response.StatusCode))
 		span.End(dbmodel.AttemptFailed, response.StatusCode, readErr.Error())
 		return response.StatusCode, 0, fmt.Errorf("failed to read compact response body: %w", readErr)
 	}

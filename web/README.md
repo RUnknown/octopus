@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Octopus Web Console
 
-## Getting Started
+This directory contains the Octopus management console. It is a Next.js 16 and React 19 application that is exported as static files and embedded into the Go service.
 
-First, run the development server:
+## Architecture
+
+- Next.js App Router provides the static application shell.
+- Navigation between Home, Site, Channel, Group, Model, Log, and Setting modules is handled by the in-app route store rather than separate Next.js pages.
+- React Query manages server state and API polling.
+- Zustand stores authentication, navigation, appearance, and local UI preferences.
+- `next-intl` provides Simplified Chinese, Traditional Chinese, and English messages from `public/locale`.
+- Tailwind CSS and reusable components under `src/components/ui` provide styling.
+
+The frontend calls the Go management API under `/api/v1`. `NEXT_PUBLIC_API_BASE_URL` can override the API origin during development; the production default is the current origin.
+
+## Development
+
+Requirements: Node.js 22+ and pnpm.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install --frozen-lockfile
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open <http://localhost:3000>. Run the Go backend separately on the API origin configured by `NEXT_PUBLIC_API_BASE_URL`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Example:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8080 pnpm dev
+```
 
-## Learn More
+## Verification
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+pnpm exec tsc --noEmit
+pnpm lint
+pnpm build
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+`pnpm build` writes the static export to `web/out`. Release builds replace `static/out` with this directory before compiling the Go binary.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Important directories
 
-## Deploy on Vercel
+- `src/api/endpoints`: typed API and React Query hooks
+- `src/components/modules`: feature modules and screens
+- `src/components/ui`: reusable UI primitives
+- `src/route`: in-app navigation configuration and lazy loading
+- `src/provider`: authentication, locale, theme, and query providers
+- `src/stores`: shared persisted state
+- `public/locale`: translation resources
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+See the repository-level [README](../README.md) for backend architecture, supported model APIs, deployment, and operational guidance.

@@ -29,6 +29,7 @@ type ActiveRequestView struct {
 
 type activeRequestState struct {
 	ActiveRequestView
+	startedAt      time.Time
 	stageStartedAt time.Time
 }
 
@@ -54,6 +55,7 @@ func beginActiveRequest(apiKeyID int, requestModel string, stream bool) int64 {
 			UpdatedAt:    now.Unix(),
 			Streaming:    stream,
 		},
+		startedAt:      now,
 		stageStartedAt: now,
 	}
 	activeRequests.mu.Unlock()
@@ -93,7 +95,7 @@ func ListActiveRequests() []ActiveRequestView {
 	views := make([]ActiveRequestView, 0, len(activeRequests.requests))
 	for _, state := range activeRequests.requests {
 		view := state.ActiveRequestView
-		view.ElapsedMS = now.Sub(time.Unix(view.StartedAt, 0)).Milliseconds()
+		view.ElapsedMS = now.Sub(state.startedAt).Milliseconds()
 		view.StageElapsedMS = now.Sub(state.stageStartedAt).Milliseconds()
 		views = append(views, view)
 	}

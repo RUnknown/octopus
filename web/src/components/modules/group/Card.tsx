@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Activity, Loader2, RefreshCw, Trash2, X, Pencil, Pin, PinOff } from 'lucide-react';
+import { Activity, AlertCircle, Loader2, RefreshCw, Trash2, X, Pencil, Pin, PinOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GroupMode, type Group, type GroupUpdateRequest, useDeleteGroup, useUpdateGroup, useToggleGroupPin, useGroupRouteState, type ClientProtocol, type GroupRouteCandidateState } from '@/api/endpoints/group';
 import { useModelChannelList } from '@/api/endpoints/model';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/common/Toast';
 import { CopyIconButton } from '@/components/common/CopyButton';
@@ -79,7 +79,6 @@ const CLIENT_PROTOCOLS: ClientProtocol[] = [
     'openai_chat',
     'codex_responses',
     'anthropic',
-    'gemini',
     'openai_embeddings',
 ];
 
@@ -88,15 +87,21 @@ function formatDuration(seconds: number) {
     return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
 }
 
-function formatUnixTime(value?: number) {
-    if (!value) return '-';
-    return new Date(value * 1000).toLocaleString('zh-CN', {
+function formatUnixTime(value: number | undefined, locale: string) {
+	if (!value) return '-';
+	return new Date(value * 1000).toLocaleString(locale, {
         month: '2-digit',
         day: '2-digit',
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
     });
+}
+
+function getErrorMessage(error: unknown) {
+    if (error instanceof Error) return error.message;
+    if (typeof error === 'string') return error;
+    return '';
 }
 
 function RouteCandidateRow({
@@ -106,7 +111,8 @@ function RouteCandidateRow({
     candidate: GroupRouteCandidateState;
     isNext: boolean;
 }) {
-    const t = useTranslations('group.diagnostics');
+	const t = useTranslations('group.diagnostics');
+	const locale = useLocale();
     const visibleKeys = candidate.keys?.slice(0, 4) ?? [];
 
     return (
@@ -143,7 +149,7 @@ function RouteCandidateRow({
                     {candidate.reason ? <div>{t('reason')}: <span className="text-foreground">{candidate.reason}</span></div> : null}
                     {candidate.protocol_reason ? <div>{t('protocolReason')}: <span className="text-foreground">{candidate.protocol_reason}</span></div> : null}
                     {candidate.cooldown_seconds ? <div>{t('cooldown')}: <span className="font-mono text-foreground">{formatDuration(candidate.cooldown_seconds)}</span></div> : null}
-                    {candidate.recover_at_unix ? <div>{t('recoverAt')}: <span className="text-foreground">{formatUnixTime(candidate.recover_at_unix)}</span></div> : null}
+					{candidate.recover_at_unix ? <div>{t('recoverAt')}: <span className="text-foreground">{formatUnixTime(candidate.recover_at_unix, locale)}</span></div> : null}
                 </div>
             ) : null}
             {visibleKeys.length > 0 ? (
@@ -175,6 +181,9 @@ function GroupRouteDiagnosticsDialog({
     const [protocol, setProtocol] = useState<ClientProtocol>('openai_responses');
     const routeQuery = useGroupRouteState(group.id, protocol, open);
     const state = routeQuery.data;
+    const routeError = routeQuery.error ?? routeQuery.failureReason;
+    const routeErrorMessage = getErrorMessage(routeError);
+    const showRouteError = routeQuery.isError || (!state && Boolean(routeError));
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -207,12 +216,22 @@ function GroupRouteDiagnosticsDialog({
                         </Button>
                     </div>
                 </div>
-                <div className="min-h-0 flex-1 overflow-auto p-5">
-                    {routeQuery.isLoading ? (
-                        <div className="flex h-40 items-center justify-center text-muted-foreground">
-                            <Loader2 className="size-5 animate-spin" />
-                        </div>
-                    ) : state ? (
+				<div className="min-h-0 flex-1 overflow-auto p-5">
+					{routeQuery.isLoading ? (
+						<div className="flex h-40 items-center justify-center text-muted-foreground">
+							<Loader2 className="size-5 animate-spin" />
+						</div>
+					) : showRouteError ? (
+						<div className="flex h-40 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+							<AlertCircle className="size-5 text-destructive" />
+							<span className="font-medium text-foreground">{t('error')}</span>
+							{routeErrorMessage ? <span className="max-w-md wrap-break-word">{routeErrorMessage}</span> : null}
+							<Button type="button" variant="outline" size="sm" onClick={() => void routeQuery.refetch()} disabled={routeQuery.isFetching}>
+								<RefreshCw className="size-4" />
+								{t('retry')}
+							</Button>
+						</div>
+					) : state ? (
                         <div className="space-y-3">
                             <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground md:grid-cols-4">
                                 <div className="rounded-md border border-border/70 bg-muted/20 p-2">{t('candidateCount')}<div className="font-mono text-base text-foreground">{state.available_count}/{state.candidate_count}</div></div>

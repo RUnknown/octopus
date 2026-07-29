@@ -164,7 +164,17 @@ func processWSResponseCreate(
 	if genRaw, ok := reqBody["generate"]; ok {
 		var generate bool
 		if json.Unmarshal(genRaw, &generate) == nil && !generate {
+			activeRequestID := beginActiveRequest(apiKeyID, requestModel, true)
+			defer finishActiveRequest(activeRequestID)
+			updateActiveRequest(activeRequestID, func(view *ActiveRequestView) {
+				view.Stage = "warming_up"
+				view.LastMessage = "warming upstream websocket connection"
+			})
 			if err := bestEffortWarmupUpstreamWS(ctx, apiKeyID, supportedModels, modelListMode, reqBody); err != nil {
+				updateActiveRequest(activeRequestID, func(view *ActiveRequestView) {
+					view.Stage = "failed_attempt"
+					view.LastMessage = err.Error()
+				})
 				log.Warnf("ws warmup failed (apikey=%d): %v", apiKeyID, err)
 			} else {
 				log.Debugf("ws warmup ready (apikey=%d)", apiKeyID)
@@ -228,6 +238,14 @@ func processWSResponseCreate(
 		writeWSError(ctx, conn, status, code, err.Error())
 		return conversationState
 	}
+	activeRequestID := beginActiveRequest(apiKeyID, requestModel, true)
+	defer finishActiveRequest(activeRequestID)
+	req.activeRequestID = activeRequestID
+	updateActiveRequest(activeRequestID, func(view *ActiveRequestView) {
+		view.GroupID = group.ID
+		view.UsedWS = true
+		view.LastMessage = "websocket response request prepared"
+	})
 
 	autoRestart := conversationState != nil && continuationRequested && conversationState.CanAutoRestart(originalRequest)
 	failedPreviousResponseID := currentPreviousResponseID(originalRequest)
@@ -255,6 +273,7 @@ func processWSResponseCreate(
 		if replayErr == nil {
 			replayReq.metrics.SetWSMode(dbmodel.RelayLogWSModeReplay)
 			replayReq.metrics.SetWSRecovery(dbmodel.RelayLogWSRecoveryReplay)
+			replayReq.activeRequestID = activeRequestID
 			req = replayReq
 			group = replayGroup
 			result = runWSRelay(ctx, req, group)
@@ -465,6 +484,12 @@ func runWSRelay(ctx context.Context, req *relayRequest, group *dbmodel.Group) ws
 		if req.iter.Index() >= maxChannelAttempts {
 			break
 		}
+		updateActiveRequest(req.activeRequestID, func(view *ActiveRequestView) {
+			view.Stage = "select_candidate"
+			view.Attempt = req.iter.Index() + 1
+			view.GroupID = group.ID
+			view.UsedWS = true
+		})
 		select {
 		case <-relayCtx.Done():
 			if isLocalRelayBudgetExceeded(relayCtx, contextError(relayCtx)) {
@@ -480,6 +505,11 @@ func runWSRelay(ctx context.Context, req *relayRequest, group *dbmodel.Group) ws
 		}
 
 		item := req.iter.Item()
+		updateActiveRequest(req.activeRequestID, func(view *ActiveRequestView) {
+			view.ChannelID = item.ChannelID
+			view.ActualModel = item.ModelName
+			view.LastMessage = "websocket candidate selected"
+		})
 
 		channel, err := op.ChannelGet(item.ChannelID, ctx)
 		if err != nil {
@@ -535,6 +565,10 @@ func runWSRelay(ctx context.Context, req *relayRequest, group *dbmodel.Group) ws
 		var result attemptResult
 		for retryNum := 0; retryNum < maxSameChannelRetries; retryNum++ {
 			if retryNum > 0 {
+				updateActiveRequest(req.activeRequestID, func(view *ActiveRequestView) {
+					view.Stage = "retry_backoff"
+					view.LastMessage = "waiting before websocket upstream retry"
+				})
 				delay := computeBackoff(retryNum, result.RetryAfter)
 				select {
 				case <-relayCtx.Done():

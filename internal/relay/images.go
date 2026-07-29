@@ -117,6 +117,8 @@ func ImagesHandler(endpoint string, c *gin.Context) {
 	// 初始化 Metrics（Images 独立，避免 b64_json 内存膨胀）
 	metrics := newImagesRelayMetrics(apiKeyID, requestModel)
 	metrics.RequestContent = buildImagesRequestContentForLog(isMultipart, bc, jsonPayload)
+	activeRequestID := beginActiveRequest(apiKeyID, requestModel, stream)
+	defer finishActiveRequest(activeRequestID)
 
 	// === 早期心跳 ===
 	// 流式：启动早期心跳协程，覆盖前置阶段（连接慢、failover、退避）期间向客户端发 SSE 注释字节
@@ -127,6 +129,11 @@ func ImagesHandler(endpoint string, c *gin.Context) {
 	var lastErr error
 
 	for iter.Next() {
+		updateActiveRequest(activeRequestID, func(view *ActiveRequestView) {
+			view.Stage = "select_candidate"
+			view.Attempt = iter.Index() + 1
+			view.GroupID = group.ID
+		})
 		select {
 		case <-ctx.Done():
 			log.Debugf("request context canceled, stopping retry")
@@ -136,6 +143,11 @@ func ImagesHandler(endpoint string, c *gin.Context) {
 		}
 
 		item := iter.Item()
+		updateActiveRequest(activeRequestID, func(view *ActiveRequestView) {
+			view.ChannelID = item.ChannelID
+			view.ActualModel = item.ModelName
+			view.LastMessage = "image candidate selected"
+		})
 
 		// 获取通道
 		channel, err := op.ChannelGet(item.ChannelID, ctx)
@@ -172,6 +184,15 @@ func ImagesHandler(endpoint string, c *gin.Context) {
 			iter.Index()+1, iter.Len(), iter.IsSticky(), stream)
 
 		span := iter.StartAttempt(channel.ID, usedKey.ID, channel.Name)
+		updateActiveRequest(activeRequestID, func(view *ActiveRequestView) {
+			view.Stage = "forwarding"
+			view.ChannelID = channel.ID
+			view.ChannelKeyID = usedKey.ID
+			view.ChannelName = channel.Name
+			view.ActualModel = item.ModelName
+			view.Attempt = span.AttemptNum()
+			view.LastMessage = "upstream image request in progress"
+		})
 
 		// 尝试一次转发
 		statusCode, written, usage, upstreamCT, fwdErr := imagesAttempt(ctx, endpoint, c, bc, isMultipart, boundary, jsonPayload, stream, channel, usedKey.ChannelKey, group.FirstTokenTimeOut, metrics, item.ModelName, hb)
@@ -181,6 +202,10 @@ func ImagesHandler(endpoint string, c *gin.Context) {
 		usedKey.LastUseTimeStamp = time.Now().Unix()
 
 		if fwdErr == nil {
+			updateActiveRequest(activeRequestID, func(view *ActiveRequestView) {
+				view.Stage = "collecting_response"
+				view.LastMessage = "upstream image request succeeded"
+			})
 			// ====== 成功 ======
 			metrics.ActualModel = item.ModelName
 			if usage != nil {
@@ -209,7 +234,12 @@ func ImagesHandler(endpoint string, c *gin.Context) {
 		}
 
 		// ====== 失败 ======
+		updateActiveRequest(activeRequestID, func(view *ActiveRequestView) {
+			view.Stage = "failed_attempt"
+			view.LastMessage = fwdErr.Error()
+		})
 		op.ChannelKeyUpdate(usedKey)
+		span.SetRetryable(isRetryableStatus(statusCode))
 		span.End(model.AttemptFailed, statusCode, fwdErr.Error())
 
 		// Channel 维度统计

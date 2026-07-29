@@ -22,7 +22,7 @@ type ChannelAttempt struct {
 	Duration        int           `json:"duration"`
 	Sticky          bool          `json:"sticky,omitempty"`
 	Reason          string        `json:"reason,omitempty"`
-	Retryable       bool          `json:"retryable,omitempty"`
+	Retryable       *bool         `json:"retryable,omitempty"`
 	CooldownUntil   int64         `json:"cooldown_until,omitempty"`
 	CooldownSeconds int           `json:"cooldown_seconds,omitempty"`
 	Msg             string        `json:"msg,omitempty"`

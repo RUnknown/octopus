@@ -205,6 +205,16 @@ func (s *AttemptSpan) End(status model.AttemptStatus, statusCode int, msg string
 	s.iter.attempts = append(s.iter.attempts, s.attempt)
 }
 
+// SetRetryable records whether the relay policy considers this failed attempt
+// eligible for another try. A pointer is used in ChannelAttempt so false can be
+// distinguished from historical logs that do not contain the field.
+func (s *AttemptSpan) SetRetryable(retryable bool) {
+	if s == nil || s.ended {
+		return
+	}
+	s.attempt.Retryable = &retryable
+}
+
 func (s *AttemptSpan) AttemptNum() int {
 	if s == nil {
 		return 0

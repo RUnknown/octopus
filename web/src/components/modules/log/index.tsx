@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useActiveRelayRequests, useLogs, useLogSiteActionTargets, type LogKeywordMode, type LogKeywordScope, type ActiveRelayRequest } from '@/api/endpoints/log';
 import { LogCard, type LogSiteActionTargets } from './Item';
-import { Activity, Clock, Loader2, RefreshCw } from 'lucide-react';
+import { Activity, AlertCircle, Clock, Loader2, RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { VirtualizedGrid } from '@/components/common/VirtualizedGrid';
 import { useSearchStore } from '@/components/modules/toolbar';
@@ -99,18 +99,28 @@ function ActiveRequestsDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                     <DialogDescription>{t('description')}</DialogDescription>
                 </DialogHeader>
                 <div className="flex items-center justify-between border-b border-border px-5 py-2 text-xs text-muted-foreground">
-                    <span>{t('count', { count: requests.length })}</span>
+					<span>{activeQuery.isError ? t('error') : t('count', { count: requests.length })}</span>
                     <Button type="button" variant="ghost" size="sm" onClick={() => void activeQuery.refetch()} disabled={activeQuery.isFetching}>
                         <RefreshCw className="size-4" />
                         {t('refresh')}
                     </Button>
                 </div>
-                <div className="min-h-0 flex-1 overflow-auto p-5">
-                    {activeQuery.isLoading ? (
-                        <div className="flex h-32 items-center justify-center text-muted-foreground">
-                            <Loader2 className="size-5 animate-spin" />
-                        </div>
-                    ) : requests.length === 0 ? (
+				<div className="min-h-0 flex-1 overflow-auto p-5">
+					{activeQuery.isLoading ? (
+						<div className="flex h-32 items-center justify-center text-muted-foreground">
+							<Loader2 className="size-5 animate-spin" />
+						</div>
+					) : activeQuery.isError ? (
+						<div className="flex h-32 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+							<AlertCircle className="size-5 text-destructive" />
+							<span className="font-medium text-foreground">{t('error')}</span>
+							<span className="max-w-md wrap-break-word">{activeQuery.error.message}</span>
+							<Button type="button" variant="outline" size="sm" onClick={() => void activeQuery.refetch()} disabled={activeQuery.isFetching}>
+								<RefreshCw className="size-4" />
+								{t('retry')}
+							</Button>
+						</div>
+					) : requests.length === 0 ? (
                         <div className="flex h-32 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
                             <Clock className="size-5" />
                             <span>{t('empty')}</span>

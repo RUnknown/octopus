@@ -273,6 +273,10 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		for retryNum := 0; retryNum < maxSameChannelRetries; retryNum++ {
 			// 重试前等待退避
 			if retryNum > 0 {
+				updateActiveRequest(activeRequestID, func(view *ActiveRequestView) {
+					view.Stage = "retry_backoff"
+					view.LastMessage = "waiting before upstream retry"
+				})
 				delay := computeBackoff(retryNum, result.RetryAfter)
 				log.Infof("same-channel retry %d/%d for %s, waiting %v",
 					retryNum, maxSameChannelRetries, channel.Name, delay)
@@ -479,6 +483,7 @@ func (ra *relayAttempt) attempt() attemptResult {
 	})
 	if isFirstTokenTimeout(ra.requestContext(), fwdErr) {
 		op.ChannelKeyUpdate(ra.usedKey)
+		span.SetRetryable(true)
 		span.End(dbmodel.AttemptFailed, statusCode, "timeout=first_token: "+fwdErr.Error())
 		op.StatsChannelUpdate(ra.channel.ID, dbmodel.StatsMetrics{
 			WaitTime:      span.Duration().Milliseconds(),
@@ -537,6 +542,7 @@ func (ra *relayAttempt) attempt() attemptResult {
 		failMsg = "timeout=request: " + failMsg
 	}
 	op.ChannelKeyUpdate(ra.usedKey)
+	span.SetRetryable(isRetryableStatus(statusCode))
 	span.End(dbmodel.AttemptFailed, statusCode, failMsg)
 
 	// Channel 维度统计
