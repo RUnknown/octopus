@@ -298,11 +298,11 @@ function RetryBadgeWithTooltip({ channelName, brandColor, attempts }: RetryBadge
             <TooltipTrigger asChild>
                 <Badge
                     variant="secondary"
-                    className="shrink-0 text-xs px-1.5 py-0 cursor-help"
+                    className="max-w-full min-w-0 shrink-0 cursor-help px-1.5 py-0 text-xs md:max-w-[35%]"
                     style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
                 >
                     <RotateCw className="size-3 mr-1 opacity-80" />
-                    {channelName}
+                    <span className="truncate">{channelName}</span>
                 </Badge>
             </TooltipTrigger>
             <TooltipContent className="border bg-card p-2 min-w-[280px] shadow-sm rounded-3xl flex flex-col gap-1">
@@ -356,7 +356,7 @@ function WSModeBadge({ log }: { log: RelayLog }) {
     if (!modeMeta && !execMeta && !recoveryMeta) return null;
 
     return (
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-1.5 md:w-auto md:shrink-0">
             {modeMeta ? (
                 <Tooltip>
                     <TooltipTrigger asChild>
@@ -651,49 +651,53 @@ export function LogCard({ log, siteTargets }: { log: RelayLog; siteTargets: LogS
                         }
                     }}
                     className={cn(
-                        'rounded-3xl border bg-card w-full text-left',
+                        'w-full overflow-hidden rounded-3xl border bg-card text-left',
                         hasError ? 'border-destructive/40' : 'border-border',
                     )}
                 >
                     <div className={cn('p-4 grid grid-cols-[auto_1fr] gap-4', hasError ? 'items-start' : 'items-center')}>
                         <ModelAvatar size={40} />
                         <div className="min-w-0 flex flex-col gap-3">
-                            <div className="flex items-start gap-3 min-w-0">
-                                <div className="flex min-w-0 flex-1 items-center gap-2 text-sm">
-                                    <span className="font-semibold text-card-foreground truncate" title={log.request_model_name}>
-                                        {log.request_model_name}
-                                    </span>
-                                    <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/50" />
-                                    {log.processing ? (
-                                        <Badge variant="secondary" className="shrink-0 gap-1 px-1.5 py-0 text-xs bg-amber-500/15 text-amber-700 dark:text-amber-300">
-                                            <Loader2 className="size-3 animate-spin" />
-                                            {t('processing')}
-                                        </Badge>
-                                    ) : hasMultipleAttempts ? (
-                                        <RetryBadgeWithTooltip
-                                            channelName={log.channel_name}
-                                            brandColor={brandColor}
-                                            attempts={log.attempts!}
-                                        />
-                                    ) : (
-                                        <Badge
-                                            variant="secondary"
-                                            className="shrink-0 text-xs px-1.5 py-0"
-                                            style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
-                                        >
-                                            {log.channel_name}
-                                        </Badge>
-                                    )}
-                                    <span className="text-muted-foreground truncate" title={displayActualModelName}>
-                                        {displayActualModelName}
-                                    </span>
-                                    {log.attempts?.some((attempt) => attempt.sticky) ? (
-                                        <Pin className="size-3.5 shrink-0 text-amber-500" />
-                                    ) : null}
+                            <div className="flex min-w-0 flex-col gap-2 md:flex-row md:items-start md:gap-3">
+                                <div className="flex min-w-0 flex-1 flex-col gap-1 text-sm md:contents">
+                                    <div className="flex min-w-0 items-center gap-2 md:contents">
+                                        <span className="min-w-0 flex-1 truncate font-semibold text-card-foreground" title={log.request_model_name}>
+                                            {log.request_model_name}
+                                        </span>
+                                        <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/50" />
+                                        <span className="min-w-0 flex-1 truncate text-muted-foreground" title={displayActualModelName}>
+                                            {displayActualModelName}
+                                        </span>
+                                    </div>
+                                    <div className="flex min-w-0 items-center gap-2 md:contents">
+                                        {log.processing ? (
+                                            <Badge variant="secondary" className="shrink-0 gap-1 px-1.5 py-0 text-xs bg-amber-500/15 text-amber-700 dark:text-amber-300">
+                                                <Loader2 className="size-3 animate-spin" />
+                                                {t('processing')}
+                                            </Badge>
+                                        ) : hasMultipleAttempts ? (
+                                            <RetryBadgeWithTooltip
+                                                channelName={log.channel_name}
+                                                brandColor={brandColor}
+                                                attempts={log.attempts!}
+                                            />
+                                        ) : (
+                                            <Badge
+                                                variant="secondary"
+                                                className="max-w-full min-w-0 shrink-0 px-1.5 py-0 text-xs md:max-w-[35%]"
+                                                style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
+                                            >
+                                                <span className="truncate">{log.channel_name}</span>
+                                            </Badge>
+                                        )}
+                                        {log.attempts?.some((attempt) => attempt.sticky) ? (
+                                            <Pin className="size-3.5 shrink-0 text-amber-500" />
+                                        ) : null}
+                                    </div>
                                 </div>
                                 <WSModeBadge log={log} />
                             </div>
-                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,0.85fr)_minmax(0,1.05fr)_minmax(0,1.55fr)_minmax(0,1.2fr)_minmax(0,1fr)] gap-x-4 gap-y-2 text-xs tabular-nums text-muted-foreground">
+                            <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs tabular-nums text-muted-foreground md:grid-cols-3 md:gap-x-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,0.85fr)_minmax(0,1.05fr)_minmax(0,1.55fr)_minmax(0,1.2fr)_minmax(0,1fr)]">
                                 <div className="flex items-center gap-1.5">
                                     <Clock className="size-3.5 shrink-0" style={{ color: brandColor }} />
                                     <span>{formatTime(log.time)}</span>
@@ -710,43 +714,41 @@ export function LogCard({ log, siteTargets }: { log: RelayLog; siteTargets: LogS
                                     <Zap className="size-3.5 shrink-0 text-amber-500" />
                                     <span>{t('duration')} {formatDurationCompact(log.ftut)} / {formatDurationCompact(log.use_time)}</span>
                                 </div>
-                                <div className="flex min-w-0 items-center gap-1.5">
+                                <div className="col-span-2 flex min-w-0 flex-wrap items-center gap-1.5 md:col-span-1">
                                     <ArrowDownToLine className={cn('size-3.5 shrink-0', hasCacheTokens(log) ? 'text-sky-500' : 'text-green-500')} />
-                                    <span className="flex min-w-0 items-center gap-1 whitespace-nowrap">
-                                        {t('input')}
-                                        <span className="tabular-nums">{getHeadlineInputTokens(log).toLocaleString()}</span>
-                                        {hasCacheTokens(log) && log.cache_read_tokens != null && log.cache_read_tokens > 0 ? (
-                                            <>
-                                                <Badge
-                                                    variant="secondary"
-                                                    className="shrink-0 px-1.5 py-0 text-[11px] bg-sky-500/15 text-sky-600 dark:text-sky-400"
-                                                    title={t('cacheRead')}
-                                                >
-                                                    {formatCompactTokenCount(log.cache_read_tokens)}
-                                                </Badge>
-                                                <Tooltip>
-                                                    <TooltipTrigger asChild>
-                                                        <Badge
-                                                            variant="secondary"
-                                                            className="shrink-0 cursor-help px-1.5 py-0 text-[11px] bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                                                            aria-label={`${t('cacheHitRate')} ${cacheHitRate.toFixed(1)}%`}
-                                                        >
-                                                            {cacheHitRate.toFixed(1)}%
-                                                        </Badge>
-                                                    </TooltipTrigger>
-                                                    <TooltipContent>{t('cacheHitRate')}</TooltipContent>
-                                                </Tooltip>
-                                            </>
-                                        ) : null}
-                                    </span>
+                                    <span className="whitespace-nowrap">{t('input')}</span>
+                                    <span className="whitespace-nowrap">{getHeadlineInputTokens(log).toLocaleString()}</span>
+                                    {hasCacheTokens(log) && log.cache_read_tokens != null && log.cache_read_tokens > 0 ? (
+                                        <>
+                                            <Badge
+                                                variant="secondary"
+                                                className="shrink-0 px-1.5 py-0 text-[11px] bg-sky-500/15 text-sky-600 dark:text-sky-400"
+                                                title={t('cacheRead')}
+                                            >
+                                                {formatCompactTokenCount(log.cache_read_tokens)}
+                                            </Badge>
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Badge
+                                                        variant="secondary"
+                                                        className="shrink-0 cursor-help px-1.5 py-0 text-[11px] bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                                                        aria-label={`${t('cacheHitRate')} ${cacheHitRate.toFixed(1)}%`}
+                                                    >
+                                                        {cacheHitRate.toFixed(1)}%
+                                                    </Badge>
+                                                </TooltipTrigger>
+                                                <TooltipContent>{t('cacheHitRate')}</TooltipContent>
+                                            </Tooltip>
+                                        </>
+                                    ) : null}
                                 </div>
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                                     <ArrowUpFromLine className="size-3.5 shrink-0 text-purple-500" />
-                                    <span>{t('output')} {log.output_tokens.toLocaleString()}</span>
+                                    <span className="whitespace-nowrap">{t('output')} {log.output_tokens.toLocaleString()}</span>
                                 </div>
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                                     <DollarSign className="size-3.5 shrink-0 text-emerald-500" />
-                                    <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                                    <span className="whitespace-nowrap font-medium text-emerald-600 dark:text-emerald-400">
                                         {t('cost')} {Number(log.cost).toFixed(6)}
                                     </span>
                                 </div>
