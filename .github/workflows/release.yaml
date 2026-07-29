@@ -123,8 +123,31 @@ jobs:
             ghcr.io/${{ github.repository }}:${{ env.RELEASE_TAG }}
           provenance: false
 
-      - name: 创建 GitHub Release（无二进制附件）
+      - name: 生成更新日志
+        shell: bash
+        run: |
+          set -e
+          PREVIOUS_TAG="$(git describe --tags --abbrev=0 "${RELEASE_TAG}^" 2>/dev/null || true)"
+          {
+            echo "## 更新日志"
+            echo
+            if [ -n "${PREVIOUS_TAG}" ]; then
+              echo "相较于 ${PREVIOUS_TAG}："
+              git log --no-merges --pretty=format:'- %s（%h）' "${PREVIOUS_TAG}..${RELEASE_TAG}"
+            else
+              echo "- 首次发布。"
+            fi
+            echo
+            echo
+            echo "## Docker 镜像"
+            echo
+            echo "- Debian：\`ghcr.io/${{ github.repository }}:${RELEASE_TAG}\`"
+            echo "- Alpine：\`ghcr.io/${{ github.repository }}:${RELEASE_TAG}-alpine\`"
+          } > release-notes.md
+
+      - name: 创建 GitHub Release 与更新日志（无二进制附件）
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           tag_name: ${{ env.RELEASE_TAG }}
+          body_path: release-notes.md
