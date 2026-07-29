@@ -216,7 +216,7 @@ build_frontend() {
 
     # Install dependencies
     log_info "Installing frontend dependencies..."
-    if ! pnpm install; then
+    if ! pnpm install --frozen-lockfile; then
         log_error "Failed to install frontend dependencies"
         cd ..
         return 1
@@ -258,11 +258,19 @@ build_frontend() {
 
 update_price() {
     log_step "Updating price"
-    if ! python3 scripts/updatePrice.py; then
-        log_error "Failed to update price"
-        return 1
+    local price_file="internal/price/presets.go"
+    if python3 scripts/updatePrice.py; then
+        log_success "Price updated"
+        return 0
     fi
-    log_success "Price updated"
+
+    if [ -s "${price_file}" ]; then
+        log_warning "Failed to refresh price data; using existing ${price_file}"
+        return 0
+    fi
+
+    log_error "Failed to update price and no existing price data is available"
+    return 1
 }
 
 
