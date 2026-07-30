@@ -1,15 +1,11 @@
 package update
 
 import (
-	"archive/zip"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -21,11 +17,10 @@ import (
 
 const defaultRepoSlug = "mingtian886/octopus"
 
-// updateUrl 与 updateApiUrl 从 conf.Repo 推导，避免仓库地址在多处硬编码后失去同步。
-var (
-	updateUrl    = "https://github.com/" + repoSlug() + "/releases/latest/download"
-	updateApiUrl = "https://api.github.com/repos/" + repoSlug() + "/releases/latest"
-)
+// updateApiUrl 从 conf.Repo 推导，避免仓库地址在多处硬编码后失去同步。
+// 发布流程只产出 Docker 镜像，不再上传二进制附件，所以这里只查询版本信息，
+// 由前端引导用户拉取新镜像，不做进程内自更新。
+var updateApiUrl = "https://api.github.com/repos/" + repoSlug() + "/releases/latest"
 
 // repoSlug 从 conf.Repo 中解析 owner/repo；解析失败时回退到默认仓库。
 func repoSlug() string {
@@ -106,77 +101,4 @@ func GetLatestInfo() (*LatestInfo, error) {
 		return nil, fmt.Errorf("failed to get latest info: %s", latestInfo.Message)
 	}
 	return &latestInfo, nil
-}
-
-func unzip(data []byte, dest string) error {
-	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
-	if err != nil {
-		log.Debugf("new zip reader failed: %v", err)
-		return err
-	}
-
-	for _, f := range r.File {
-		fpath := filepath.Join(dest, f.Name)
-
-		if !isPathInDest(fpath, dest) {
-			log.Debugf("invalid file path: %s", fpath)
-			return fmt.Errorf("invalid file path: %s", fpath)
-		}
-
-		info := f.FileInfo()
-		if info.IsDir() {
-			os.MkdirAll(fpath, os.ModePerm)
-			continue
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			continue
-		}
-
-		if err := extractFile(f, fpath); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func extractFile(f *zip.File, fpath string) error {
-	if err := os.MkdirAll(filepath.Dir(fpath), os.ModePerm); err != nil {
-		log.Debugf("mkdir all failed: %v", err)
-		return err
-	}
-
-	outFile, err := os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode().Perm())
-	if err != nil {
-		if err = os.Remove(fpath); err != nil {
-			log.Debugf("remove file failed: %v", err)
-			return err
-		}
-		outFile, err = os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
-		if err != nil {
-			log.Debugf("open file failed: %v", err)
-			return err
-		}
-	}
-	defer outFile.Close()
-
-	rc, err := f.Open()
-	if err != nil {
-		log.Debugf("open file failed: %v", err)
-		return err
-	}
-	defer rc.Close()
-
-	if _, err = io.Copy(outFile, rc); err != nil {
-		log.Debugf("copy failed: %v", err)
-		return err
-	}
-	return nil
-}
-
-func isPathInDest(fpath, dest string) bool {
-	rel, err := filepath.Rel(dest, fpath)
-	if err != nil {
-		return false
-	}
-	return filepath.IsLocal(rel)
 }

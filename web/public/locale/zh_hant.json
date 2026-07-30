@@ -416,11 +416,8 @@
             "versionMismatchHint": "前端版本 ({frontend}) 與後端版本 ({backend}) 不一致，可能是瀏覽器快取問題，請強制重新整理頁面。",
             "forceRefresh": "強制重新整理",
             "newVersionAvailable": "發現新版本可用",
-            "newVersionAvailableHint": "請先備份數據，然後更新系統",
-            "updateNow": "立即更新",
-            "updating": "更新中...",
-            "updateSuccess": "更新成功，服務即將重啟",
-            "updateFailed": "更新失敗"
+            "newVersionAvailableHint": "請先備份數據，然後拉取新映像並重建容器。",
+            "viewRelease": "查看更新日誌"
         },
         "log": {
             "title": "歷史日誌",

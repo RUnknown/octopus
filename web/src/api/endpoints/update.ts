@@ -1,6 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../client';
-import { logger } from '@/lib/logger';
 
 /**
  * 后端 /api/v1/update 返回的最新发布信息
@@ -47,34 +46,3 @@ export function useNowVersion() {
         refetchInterval: 3600000, // 1 小时
     });
 }
-
-/**
- * 执行更新 Hook
- * 
- * @example
- * const updateCore = useUpdateCore();
- * 
- * updateCore.mutate(undefined, {
- *   onSuccess: () => {
- *     console.log('Update started successfully');
- *   },
- * });
- */
-export function useUpdateCore() {
-    const queryClient = useQueryClient();
-
-    return useMutation({
-        mutationFn: async () => {
-            return apiClient.post<string>('/api/v1/update');
-        },
-        onSuccess: (data) => {
-            logger.log('更新成功:', data);
-            queryClient.invalidateQueries({ queryKey: ['update', 'latest'] });
-            queryClient.invalidateQueries({ queryKey: ['update', 'now-version'] });
-        },
-        onError: (error) => {
-            logger.error('更新失败:', error);
-        },
-    });
-}
-

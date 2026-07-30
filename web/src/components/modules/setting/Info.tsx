@@ -2,20 +2,22 @@
 
 import { useTranslations } from 'next-intl';
 import { Info, Tag, Github, AlertTriangle, Download, Loader2 } from 'lucide-react';
-import { APP_VERSION, GITHUB_REPO } from '@/lib/info';
-import { useLatestInfo, useNowVersion, useUpdateCore } from '@/api/endpoints/update';
+import { APP_VERSION, GITHUB_REPO, DOCKER_IMAGE } from '@/lib/info';
+import { useLatestInfo, useNowVersion } from '@/api/endpoints/update';
 import { Button } from '@/components/ui/button';
-import { toast } from '@/components/common/Toast';
+import { CopyIconButton } from '@/components/common/CopyButton';
 import { isOctopusCacheName, isFontCacheName, SW_MESSAGE_TYPE } from '@/lib/sw';
 
 export function SettingInfo() {
     const t = useTranslations('setting');
     const latestInfoQuery = useLatestInfo();
     const nowVersionQuery = useNowVersion();
-    const updateCore = useUpdateCore();
 
     const backendNowVersion = nowVersionQuery.data || '';
     const latestVersion = latestInfoQuery.data?.tag_name || '';
+
+    // 发布只走 Docker，升级方式是拉取新镜像后重建容器。
+    const upgradeCommand = `docker pull ${DOCKER_IMAGE} && docker compose up -d`;
 
     // 前端版本与后端当前版本不一致 → 浏览器缓存问题
     const isCacheMismatch = !!backendNowVersion && backendNowVersion !== APP_VERSION;
@@ -47,21 +49,6 @@ export function SettingInfo() {
 
     const handleForceRefresh = () => {
         clearCacheAndReload();
-    };
-
-    const handleUpdate = () => {
-        updateCore.mutate(undefined, {
-            onSuccess: () => {
-                toast.success(t('info.updateSuccess'));
-                // 更新成功后清理缓存并刷新
-                setTimeout(() => {
-                    clearCacheAndReload();
-                }, 1500);
-            },
-            onError: () => {
-                toast.error(t('info.updateFailed'));
-            }
-        });
     };
 
     return (
@@ -161,19 +148,29 @@ export function SettingInfo() {
                         </div>
                     </div>
                     <div className="flex justify-end">
-                        <Button
-                            variant="default"
-                            size="sm"
-                            onClick={handleUpdate}
-                            disabled={updateCore.isPending}
-                            className="rounded-xl"
-                        >
-                            {updateCore.isPending ? t('info.updating') : t('info.updateNow')}
+                        <Button variant="default" size="sm" asChild className="rounded-xl">
+                            <a
+                                href={`${GITHUB_REPO}/releases/latest`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                {t('info.viewRelease')}
+                            </a>
                         </Button>
+                    </div>
+                    <div className="flex items-center gap-2 rounded-lg bg-background/60 px-2 py-1.5">
+                        <code className="flex-1 min-w-0 break-all text-xs font-mono text-muted-foreground">
+                            {upgradeCommand}
+                        </code>
+                        <CopyIconButton
+                            text={upgradeCommand}
+                            className="shrink-0 text-muted-foreground hover:text-foreground"
+                            copyIconClassName="size-4"
+                            checkIconClassName="size-4 text-primary"
+                        />
                     </div>
                 </div>
             )}
         </div>
     );
 }
-

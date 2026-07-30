@@ -416,11 +416,8 @@
             "versionMismatchHint": "前端版本 ({frontend}) 与后端版本 ({backend}) 不一致，可能是浏览器缓存问题，请强制刷新页面。",
             "forceRefresh": "强制刷新",
             "newVersionAvailable": "发现新版本可用",
-            "newVersionAvailableHint": "请先备份数据，然后更新系统",
-            "updateNow": "立即更新",
-            "updating": "更新中...",
-            "updateSuccess": "更新成功，服务即将重启",
-            "updateFailed": "更新失败"
+            "newVersionAvailableHint": "请先备份数据，然后拉取新镜像并重建容器。",
+            "viewRelease": "查看更新日志"
         },
         "log": {
             "title": "历史日志",

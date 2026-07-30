@@ -36,9 +36,6 @@ func TestRepoSlugDerivesFromConfRepo(t *testing.T) {
 }
 
 func TestUpdateEndpointsPointAtConfiguredRepo(t *testing.T) {
-	if want := "https://github.com/" + repoSlug() + "/releases/latest/download"; updateUrl != want {
-		t.Fatalf("updateUrl = %q, want %q", updateUrl, want)
-	}
 	if want := "https://api.github.com/repos/" + repoSlug() + "/releases/latest"; updateApiUrl != want {
 		t.Fatalf("updateApiUrl = %q, want %q", updateApiUrl, want)
 	}

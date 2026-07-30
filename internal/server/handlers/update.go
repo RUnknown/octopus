@@ -21,10 +21,6 @@ func init() {
 		AddRoute(
 			router.NewRoute("/now-version", http.MethodGet).
 				Handle(getNowVersion),
-		).
-		AddRoute(
-			router.NewRoute("", http.MethodPost).
-				Handle(updateFunc),
 		)
 }
 
@@ -39,13 +35,4 @@ func latest(c *gin.Context) {
 
 func getNowVersion(c *gin.Context) {
 	resp.Success(c, conf.Version)
-}
-
-func updateFunc(c *gin.Context) {
-	err := update.UpdateCore()
-	if err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	resp.Success(c, "update success")
 }
