@@ -127,8 +127,17 @@ func (b *Weighted) Candidates(items []model.GroupItem) []model.GroupItem {
 func sortByPriority(items []model.GroupItem) []model.GroupItem {
 	sorted := make([]model.GroupItem, len(items))
 	copy(sorted, items)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Priority < sorted[j].Priority
+	// Stable ordering with explicit tiebreakers keeps failover routing
+	// deterministic when several items share the same priority, and keeps the
+	// production order identical to the diagnostic preview in diagnostic.go.
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].Priority != sorted[j].Priority {
+			return sorted[i].Priority < sorted[j].Priority
+		}
+		if sorted[i].ChannelID != sorted[j].ChannelID {
+			return sorted[i].ChannelID < sorted[j].ChannelID
+		}
+		return sorted[i].ID < sorted[j].ID
 	})
 	return sorted
 }

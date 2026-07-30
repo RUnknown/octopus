@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/bestruirui/octopus/internal/transformer/compat"
 	"github.com/bestruirui/octopus/internal/transformer/model"
 	"github.com/bestruirui/octopus/internal/utils/iolimit"
 )
@@ -83,6 +84,7 @@ func (o *ChatOutbound) TransformRequest(ctx context.Context, request *model.Inte
 	request.ClearHelpFields()
 	request.NormalizeMessages()
 	request.FlattenUnsupportedBlocks(model.AlternationProviderOpenAI)
+	compat.PairToolCalls(request)
 
 	// developer role is preserved as-is on OpenAI outbound (O-L5). OpenAI
 	// 2025+ model spec treats "developer" as the canonical instruction

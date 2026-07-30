@@ -7,9 +7,20 @@ import (
 )
 
 // PatchAnthropicRequest applies small protocol repairs before Anthropic wire
-// conversion. It is intentionally narrow: only fixes cases known to trigger
-// strict Anthropic schema errors.
+// conversion. It is kept as the Anthropic-specific entrypoint so future
+// Anthropic-only fixes have a home, but the tool-call repair it performs is
+// shared with every other outbound protocol.
 func PatchAnthropicRequest(req *model.InternalLLMRequest) {
+	PairToolCalls(req)
+}
+
+// PairToolCalls repairs unanswered assistant tool calls on any outbound
+// protocol. Chat Completions, Gemini and Anthropic all reject histories where
+// an assistant tool call has no matching tool result, so the repair belongs on
+// every outbound path rather than only the Anthropic one. Operates on the
+// protocol-neutral IR, so behaviour stays identical across channels and a
+// failover between providers cannot change whether a request is accepted.
+func PairToolCalls(req *model.InternalLLMRequest) {
 	if req == nil || len(req.Messages) == 0 {
 		return
 	}

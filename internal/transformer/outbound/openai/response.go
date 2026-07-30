@@ -17,6 +17,7 @@ import (
 
 	"github.com/samber/lo"
 
+	"github.com/bestruirui/octopus/internal/transformer/compat"
 	"github.com/bestruirui/octopus/internal/transformer/model"
 	"github.com/bestruirui/octopus/internal/utils/iolimit"
 )
@@ -53,6 +54,8 @@ func (o *ResponseOutbound) TransformRequest(ctx context.Context, request *model.
 	}
 
 	request.NormalizeMessages()
+
+	compat.PairToolCalls(request)
 
 	// Convert to Responses API request format
 	responsesReq := ConvertToResponsesRequest(request)

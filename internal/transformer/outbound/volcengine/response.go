@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/bestruirui/octopus/internal/transformer/compat"
 	"github.com/bestruirui/octopus/internal/transformer/model"
 	"github.com/bestruirui/octopus/internal/transformer/outbound/openai"
 )
@@ -29,6 +30,8 @@ func (o *ResponseOutbound) TransformRequest(ctx context.Context, request *model.
 	}
 
 	request.NormalizeMessages()
+
+	compat.PairToolCalls(request)
 
 	// Convert to Responses API request format
 	openaiReq := openai.ConvertToResponsesRequest(request)

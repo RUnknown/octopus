@@ -70,3 +70,87 @@ func TestFixOrphanedToolCallsStopsAtNextAssistant(t *testing.T) {
 func stringPtr(v string) *string {
 	return &v
 }
+
+func TestPairToolCallsRepairsRequestInPlace(t *testing.T) {
+	prompt := "hi"
+	req := &model.InternalLLMRequest{
+		Messages: []model.Message{
+			{Role: "user", Content: model.MessageContent{Content: &prompt}},
+			{
+				Role:      "assistant",
+				ToolCalls: []model.ToolCall{{ID: "call_a", Function: model.FunctionCall{Name: "lookup"}}},
+			},
+		},
+	}
+
+	PairToolCalls(req)
+
+	if len(req.Messages) != 3 {
+		t.Fatalf("expected a synthetic tool result appended, got %+v", req.Messages)
+	}
+	last := req.Messages[2]
+	if last.Role != "tool" || last.ToolCallID == nil || *last.ToolCallID != "call_a" {
+		t.Fatalf("unexpected repair result: %+v", last)
+	}
+}
+
+func TestPairToolCallsIgnoresEmptyRequests(t *testing.T) {
+	PairToolCalls(nil)
+
+	req := &model.InternalLLMRequest{}
+	PairToolCalls(req)
+	if len(req.Messages) != 0 {
+		t.Fatalf("expected no messages to be synthesized, got %+v", req.Messages)
+	}
+}
+
+func TestPairToolCallsLeavesAnsweredCallsUntouched(t *testing.T) {
+	req := &model.InternalLLMRequest{
+		Messages: []model.Message{
+			{
+				Role:      "assistant",
+				ToolCalls: []model.ToolCall{{ID: "call_a", Function: model.FunctionCall{Name: "lookup"}}},
+			},
+			{
+				Role:       "tool",
+				ToolCallID: stringPtr("call_a"),
+				Content:    model.MessageContent{Content: stringPtr("done")},
+			},
+		},
+	}
+
+	PairToolCalls(req)
+
+	if len(req.Messages) != 2 {
+		t.Fatalf("answered tool call must not be patched, got %+v", req.Messages)
+	}
+}
+
+// PatchAnthropicRequest is kept as the Anthropic entrypoint but must stay
+// equivalent to the shared repair so behaviour cannot drift per protocol.
+func TestPatchAnthropicRequestMatchesPairToolCalls(t *testing.T) {
+	build := func() *model.InternalLLMRequest {
+		return &model.InternalLLMRequest{
+			Messages: []model.Message{
+				{
+					Role:      "assistant",
+					ToolCalls: []model.ToolCall{{ID: "call_a", Function: model.FunctionCall{Name: "lookup"}}},
+				},
+			},
+		}
+	}
+
+	viaAnthropic := build()
+	PatchAnthropicRequest(viaAnthropic)
+	viaShared := build()
+	PairToolCalls(viaShared)
+
+	if len(viaAnthropic.Messages) != len(viaShared.Messages) {
+		t.Fatalf("anthropic patch produced %d messages, shared repair produced %d", len(viaAnthropic.Messages), len(viaShared.Messages))
+	}
+	for i := range viaShared.Messages {
+		if viaAnthropic.Messages[i].Role != viaShared.Messages[i].Role {
+			t.Fatalf("message %d role mismatch: %q vs %q", i, viaAnthropic.Messages[i].Role, viaShared.Messages[i].Role)
+		}
+	}
+}

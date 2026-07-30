@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bestruirui/octopus/internal/transformer/compat"
 	"github.com/bestruirui/octopus/internal/transformer/model"
 	"github.com/bestruirui/octopus/internal/utils/iolimit"
 	"github.com/bestruirui/octopus/internal/utils/log"
@@ -53,6 +54,7 @@ func (o *MessagesOutbound) TransformRequest(ctx context.Context, request *model.
 
 	request.NormalizeMessages()
 	request.EnforceMessageAlternation(model.AlternationProviderGemini)
+	compat.PairToolCalls(request)
 
 	// Convert internal request to Gemini format
 	geminiReq := convertLLMToGeminiRequest(request)
