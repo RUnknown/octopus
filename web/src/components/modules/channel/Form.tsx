@@ -326,37 +326,39 @@ export function ChannelForm({
                 </div>
                 <div className="space-y-2">
                     {(formData.keys ?? []).map((k, idx) => (
-                        <div key={k.id ?? `new-${idx}`} className="flex items-center gap-2">
+                        <div key={k.id ?? `new-${idx}`} className="flex flex-wrap items-center gap-2">
                             <Input
                                 type="text"
                                 value={k.channel_key}
                                 onChange={(e) => handleUpdateKey(idx, { channel_key: e.target.value })}
                                 placeholder={t('apiKey')}
                                 required={idx === 0}
-                                className="rounded-xl flex-1"
+                                className="rounded-xl flex-1 min-w-[100px]"
                             />
                             <Input
                                 type="text"
                                 value={k.remark ?? ''}
                                 onChange={(e) => handleUpdateKey(idx, { remark: e.target.value })}
                                 placeholder={t('remark')}
-                                className="rounded-xl w-32"
+                                className="rounded-xl w-full sm:w-28 shrink-0"
                             />
-                            <Switch
-                                checked={k.enabled}
-                                onCheckedChange={(checked) => handleUpdateKey(idx, { enabled: checked })}
-                            />
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleRemoveKey(idx)}
-                                disabled={(formData.keys ?? []).length <= 1}
-                                className="h-8 w-8 p-0 rounded-xl text-muted-foreground hover:text-destructive hover:bg-transparent disabled:opacity-40"
-                                title="Remove"
-                            >
-                                <X className="h-4 w-4" />
-                            </Button>
+                            <div className="flex items-center gap-2 shrink-0">
+                                <Switch
+                                    checked={k.enabled}
+                                    onCheckedChange={(checked) => handleUpdateKey(idx, { enabled: checked })}
+                                />
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleRemoveKey(idx)}
+                                    disabled={(formData.keys ?? []).length <= 1}
+                                    className="h-8 w-8 p-0 rounded-xl text-muted-foreground hover:text-destructive hover:bg-transparent disabled:opacity-40"
+                                    title="Remove"
+                                >
+                                    <X className="h-4 w-4" />
+                                </Button>
+                            </div>
                         </div>
                     ))}
                 </div>
@@ -520,7 +522,7 @@ export function ChannelForm({
                             </div>
                             <div className="space-y-2">
                                 {(formData.custom_header ?? []).map((h, idx) => (
-                                    <div key={`hdr-${idx}`} className="flex items-center gap-2">
+                                    <div key={`hdr-${idx}`} className="flex flex-wrap items-center gap-2">
                                         <Input
                                             type="text"
                                             value={h.header_key}
@@ -589,7 +591,7 @@ export function ChannelForm({
                     />
                     <span className="text-sm font-medium text-card-foreground">{t('enabled')}</span>
                 </label>
-                <div className="flex items-center gap-6">
+                <div className="flex flex-wrap items-center gap-4 sm:gap-6">
                     <label className="flex items-center gap-2 cursor-pointer">
                         <Switch
                             checked={formData.auto_sync}

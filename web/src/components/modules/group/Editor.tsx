@@ -491,8 +491,8 @@ export function GroupEditor({
                     </div>
 
                     {/* Mode + Retry Toggle */}
-                    <div className="flex items-center gap-2">
-                        <div className="flex gap-1 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex gap-1 flex-1 min-w-[180px]">
                             {([1, 2, 3, 4] as const).map((m) => (
                                 <button
                                     key={m}
