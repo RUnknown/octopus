@@ -1,4 +1,4 @@
-name: 构建 Docker
+name: Build (Windows)
 
 on:
   workflow_dispatch:
@@ -9,53 +9,57 @@ permissions:
   contents: read
 
 jobs:
-  docker:
-    name: Docker（多架构）
+  build:
+    name: build windows
     if: >
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
        contains(github.event.pull_request.labels.*.name, 'build'))
     runs-on: ubuntu-latest
     steps:
-      - name: 检出代码
+      - name: Checkout
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          fetch-tags: true
           persist-credentials: false
 
-      - name: 设置 Go
+      - name: Setup Go
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
-      - name: 设置 pnpm
+      - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: latest
 
-      - name: 设置 Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
 
-      - name: 构建前端
+      # 前端资源由 //go:embed all:out 在编译时打入二进制，
+      # 但 .gitignore 忽略了 static/out/*，CI 干净 checkout 后该目录为空，
+      # 必须先 pnpm build 生成 web/out 并移动到 static/out，否则网页空白。
+      - name: Build frontend
         working-directory: web
         run: |
           pnpm install --frozen-lockfile
           NEXT_PUBLIC_APP_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo 'dev')" pnpm build
 
-      - name: 嵌入前端静态文件
+      - name: Embed frontend into static
         run: |
           rm -rf static/out
           mv web/out static/out
 
-      - name: 构建 Docker 所需的 Linux 二进制
+      - name: Build Windows binary
         run: |
           set -e
-          mkdir -p build/docker/linux/amd64 build/docker/linux/386 build/docker/linux/arm64 build/docker/linux/arm/v7
+          mkdir -p build/bin
           BUILD_TIME="$(TZ='Asia/Shanghai' date +'%F %T %z')"
           GIT_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo 'dev')"
           COMMIT_ID="$(git rev-parse --short HEAD)"
@@ -65,29 +69,12 @@ jobs:
                    -X 'github.com/bestruirui/octopus/internal/conf.Commit=${COMMIT_ID}' \
                    -X 'github.com/bestruirui/octopus/internal/conf.Repo=https://github.com/${{ github.repository }}' \
                    -s -w"
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags=jsoniter -ldflags="${LDFLAGS}" -o build/docker/linux/amd64/octopus .
-          CGO_ENABLED=0 GOOS=linux GOARCH=386 go build -tags=jsoniter -ldflags="${LDFLAGS}" -o build/docker/linux/386/octopus .
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -tags=jsoniter -ldflags="${LDFLAGS}" -o build/docker/linux/arm64/octopus .
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -tags=jsoniter -ldflags="${LDFLAGS}" -o build/docker/linux/arm/v7/octopus .
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o build/bin/octopus-windows-x86_64.exe -ldflags="${LDFLAGS}" -tags=jsoniter ./
 
-      - name: 设置 QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: 设置 Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: 验证 Debian Docker 镜像
-        uses: docker/build-push-action@v6
+      - name: Upload Windows binary
+        uses: actions/upload-artifact@v4
         with:
-          context: .
-          file: scripts/dockerfiles/Dockerfile.debian
-          platforms: linux/amd64,linux/386,linux/arm64,linux/arm/v7
-          outputs: type=cacheonly
-
-      - name: 验证 Alpine Docker 镜像
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: scripts/dockerfiles/Dockerfile.alpine
-          platforms: linux/amd64,linux/386,linux/arm64,linux/arm/v7
-          outputs: type=cacheonly
+          name: octopus-windows-${{ github.sha }}
+          path: build/bin/
+          retention-days: 7
+          if-no-files-found: error

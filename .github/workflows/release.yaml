@@ -1,4 +1,4 @@
-name: 发布 Docker 镜像
+name: Release (Windows)
 
 on:
   push:
@@ -16,20 +16,19 @@ env:
 
 permissions:
   contents: write
-  packages: write
 
 jobs:
-  docker:
-    name: 发布 Docker（多架构）
+  release:
+    name: release windows
     runs-on: ubuntu-latest
     steps:
-      - name: 检出发布标签
+      - name: Checkout
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
           ref: ${{ env.RELEASE_TAG }}
 
-      - name: 校验发布标签
+      - name: Validate release tag
         shell: bash
         run: |
           case "${RELEASE_TAG}" in
@@ -38,25 +37,28 @@ jobs:
           esac
           git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}"
 
-      - name: 设置 Go
+      - name: Setup Go
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
-      - name: 设置 pnpm
+      - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: latest
 
-      - name: 设置 Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
 
-      - name: 构建前端
+      # 前端资源由 //go:embed all:out 在编译时打入二进制，
+      # 但 .gitignore 忽略了 static/out/*，CI 干净 checkout 后该目录为空，
+      # 必须先 pnpm build 生成 web/out 并移动到 static/out，否则网页空白。
+      - name: Build frontend
         working-directory: web
         run: |
           pnpm install --frozen-lockfile
@@ -64,15 +66,15 @@ jobs:
           NEXT_PUBLIC_GITHUB_REPO="https://github.com/${{ github.repository }}" \
           pnpm build
 
-      - name: 嵌入前端静态文件
+      - name: Embed frontend into static
         run: |
           rm -rf static/out
           mv web/out static/out
 
-      - name: 构建 Docker 所需的 Linux 二进制
+      - name: Build Windows binary
         run: |
           set -e
-          mkdir -p build/docker/linux/amd64 build/docker/linux/386 build/docker/linux/arm64 build/docker/linux/arm/v7
+          mkdir -p build/bin
           BUILD_TIME="$(TZ='Asia/Shanghai' date +'%F %T %z')"
           COMMIT_ID="$(git rev-parse --short HEAD)"
           LDFLAGS="-X 'github.com/bestruirui/octopus/internal/conf.Version=${RELEASE_TAG}' \
@@ -81,49 +83,22 @@ jobs:
                    -X 'github.com/bestruirui/octopus/internal/conf.Commit=${COMMIT_ID}' \
                    -X 'github.com/bestruirui/octopus/internal/conf.Repo=https://github.com/${{ github.repository }}' \
                    -s -w"
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags=jsoniter -ldflags="${LDFLAGS}" -o build/docker/linux/amd64/octopus .
-          CGO_ENABLED=0 GOOS=linux GOARCH=386 go build -tags=jsoniter -ldflags="${LDFLAGS}" -o build/docker/linux/386/octopus .
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -tags=jsoniter -ldflags="${LDFLAGS}" -o build/docker/linux/arm64/octopus .
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -tags=jsoniter -ldflags="${LDFLAGS}" -o build/docker/linux/arm/v7/octopus .
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o build/bin/octopus-windows-x86_64.exe -ldflags="${LDFLAGS}" -tags=jsoniter ./
 
-      - name: 设置 QEMU
-        uses: docker/setup-qemu-action@v3
+      # 与项目1 (build.sh create_archives) 打包规范对齐：
+      # 二进制统一重命名为 octopus.exe，并附带 README.md 与 LICENSE
+      - name: Archive binaries
+        shell: bash
+        run: |
+          set -e
+          mkdir -p build/archives
+          cp build/bin/octopus-windows-x86_64.exe build/archives/octopus.exe
+          cp README.md build/archives/README.md
+          cp LICENSE build/archives/LICENSE
+          (cd build/archives && zip -q octopus-windows-x86_64.zip octopus.exe README.md LICENSE)
+          rm -f build/archives/octopus.exe build/archives/README.md build/archives/LICENSE
 
-      - name: 设置 Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: 登录 GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 构建并推送 Alpine Docker 镜像
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: scripts/dockerfiles/Dockerfile.alpine
-          push: true
-          platforms: linux/amd64,linux/386,linux/arm64,linux/arm/v7
-          tags: |
-            ghcr.io/${{ github.repository }}:latest-alpine
-            ghcr.io/${{ github.repository }}:${{ env.RELEASE_TAG }}-alpine
-          provenance: false
-
-      - name: 构建并推送 Debian Docker 镜像
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: scripts/dockerfiles/Dockerfile.debian
-          push: true
-          platforms: linux/amd64,linux/386,linux/arm64,linux/arm/v7
-          tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ env.RELEASE_TAG }}
-          provenance: false
-
-      - name: 生成更新日志
+      - name: Generate changelog
         shell: bash
         run: |
           set -e
@@ -139,15 +114,17 @@ jobs:
             fi
             echo
             echo
-            echo "## Docker 镜像"
+            echo "## 下载"
             echo
-            echo "- Debian：\`ghcr.io/${{ github.repository }}:${RELEASE_TAG}\`"
-            echo "- Alpine：\`ghcr.io/${{ github.repository }}:${RELEASE_TAG}-alpine\`"
+            echo "- Windows (amd64)：\`octopus-windows-x86_64.zip\`"
           } > release-notes.md
 
-      - name: 创建 GitHub Release 与更新日志（无二进制附件）
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          files: build/archives/*
+          fail_on_unmatched_files: true
           generate_release_notes: true
+          prerelease: false
           tag_name: ${{ env.RELEASE_TAG }}
           body_path: release-notes.md
