@@ -37,19 +37,25 @@ func capRelayLogContent(reqContent, respContent string, maxContentSizeMB int) (s
 	if maxContentSizeMB < 0 {
 		return reqContent, respContent
 	}
-	const bytesPerMiB int64 = 1024 * 1024
-	maxSize := int64(maxContentSizeMB) * bytesPerMiB
-	total := int64(len(reqContent)) + int64(len(respContent))
+	const bytesPerMiB int = 1024 * 1024
+	maxSize := maxContentSizeMB * bytesPerMiB
+	total := len(reqContent) + len(respContent)
 	if total <= maxSize {
 		return reqContent, respContent
 	}
 	log.Warnf("relay log content size=%d bytes exceeds limit=%d MiB, truncating", total, maxContentSizeMB)
 	// 优先截断响应正文
-	if respBudget := maxSize - int64(len(reqContent)); respBudget > 0 {
-		respContent = respContent[:respBudget]
+	if respBudget := maxSize - len(reqContent); respBudget > 0 {
+		if respBudget < len(respContent) {
+			respContent = respContent[:respBudget]
+		} else {
+			respContent = ""
+		}
 	} else {
-		// 响应预算为负，说明请求已超限：按比例截断请求，响应留空
-		reqContent = reqContent[:maxSize]
+		// 请求正文已超过上限：截断请求，响应留空
+		if maxSize < len(reqContent) {
+			reqContent = reqContent[:maxSize]
+		}
 		respContent = ""
 	}
 	return reqContent, respContent

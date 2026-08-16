@@ -377,6 +377,14 @@ func (m *imagesRelayMetrics) saveLog(ctx context.Context, success bool, err erro
 	// 截断 attempts 决策记录条数（防爆库兜底），与 relay 主链路对齐
 	attempts, totalAttempts := capAttemptsForLog(attempts)
 
+	// 单条日志正文上限：与 relay 主链路对齐，防止超大正文撑爆数据库
+	maxContentSizeMB, settingErr := op.SettingGetInt(model.SettingKeyRelayLogMaxContentSizeMB)
+	if settingErr != nil || maxContentSizeMB < -1 {
+		maxContentSizeMB = model.DefaultRelayLogMaxContentSizeMB
+	}
+	reqContent, respContent := capRelayLogContent(
+		m.RequestContent, m.ResponseContent, maxContentSizeMB)
+
 	relayLog := model.RelayLog{
 		Time:             m.StartTime.Unix(),
 		RequestModelName: m.RequestModel,
@@ -386,8 +394,8 @@ func (m *imagesRelayMetrics) saveLog(ctx context.Context, success bool, err erro
 		UseTime:          int(duration.Milliseconds()),
 		Attempts:         attempts,
 		TotalAttempts:    totalAttempts,
-		RequestContent:   m.RequestContent,
-		ResponseContent:  m.ResponseContent,
+		RequestContent:   reqContent,
+		ResponseContent:  respContent,
 	}
 
 	if apiKey, getErr := op.APIKeyGet(m.APIKeyID, ctx); getErr == nil {
