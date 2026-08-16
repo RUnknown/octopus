@@ -446,6 +446,32 @@
         "reliability": {
             "title": "可靠性"
         },
+        "autoStrategy": {
+            "title": "智能选择策略",
+            "description": "配置自动渠道选择策略（Auto 模式）。样本数不足的渠道优先探索，之后根据成功率与延迟动态选择。",
+            "section": "Auto 策略参数",
+            "hint": "配置自动渠道选择策略。样本数不足的渠道优先探索，之后根据成功率选择。",
+            "minSamples": {
+                "label": "最小样本数",
+                "placeholder": "10",
+                "description": "使用成功率选择前的最小请求数"
+            },
+            "timeWindow": {
+                "label": "时间窗口（秒）",
+                "placeholder": "300",
+                "description": "计算成功率的时间窗口"
+            },
+            "sampleThreshold": {
+                "label": "样本阈值",
+                "placeholder": "100",
+                "description": "滑动窗口保留的最大样本数"
+            },
+            "latencyWeight": {
+                "label": "延迟权重（0-100）",
+                "placeholder": "30",
+                "description": "值越大，自动策略越偏向低延迟渠道；值越小，越偏向成功率。"
+            }
+        },
         "syncTasks": {
             "title": "同步与定时任务",
             "intervalPlaceholder": "间隔（小时）",
@@ -630,7 +656,8 @@
             "roundRobin": "轮询",
             "random": "随机",
             "failover": "故障转移",
-            "weighted": "加权分配"
+            "weighted": "加权分配",
+            "auto": "自动"
         },
         "health": {
             "title": "健康",

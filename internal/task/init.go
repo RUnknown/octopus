@@ -7,6 +7,7 @@ import (
 	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
 	"github.com/bestruirui/octopus/internal/price"
+	"github.com/bestruirui/octopus/internal/relay/balancer"
 	"github.com/bestruirui/octopus/internal/utils/log"
 )
 
@@ -21,6 +22,7 @@ const (
 	TaskSiteCheckin       = "site_checkin"
 	TaskWSAffinityCleanup = "ws_affinity_cleanup"
 	TaskWebDAVBackup      = "webdav_backup"
+	TaskAutoStatsPurge    = "auto_stats_purge"
 )
 
 func Init() {
@@ -108,4 +110,13 @@ func Init() {
 		webdavInterval := time.Duration(webdavIntervalHours) * time.Hour
 		Register(string(model.SettingKeyWebDAVBackupInterval), webdavInterval, false, WebDAVBackupTask)
 	}
+
+	// 注册 Auto 策略空闲统计回收任务（防止 globalAutoStats 随任意 modelName 膨胀）
+	// 空闲阈值对齐 lingyuins 的 balancerIdleThreshold = 1h（issue #46 modelName 无界增长）
+	Register(TaskAutoStatsPurge, 10*time.Minute, false, func() {
+		removed := balancer.PurgeIdleStats(time.Hour)
+		if removed > 0 {
+			log.Debugf("auto strategy stats purge removed %d idle entries", removed)
+		}
+	})
 }

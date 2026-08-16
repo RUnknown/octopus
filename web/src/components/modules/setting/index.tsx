@@ -7,6 +7,7 @@ import { SettingAccount } from './Account';
 import { SettingInfo } from './Info';
 import { SettingNetwork } from './Network';
 import { SettingReliability } from './Reliability';
+import { SettingAutoStrategy } from './AutoStrategy';
 import { SettingSyncTasks } from './SyncTasks';
 import { SettingData } from './Data';
 import { SettingWebDAVBackup } from './WebDAVBackup';
@@ -21,6 +22,7 @@ export function Setting() {
                 <SettingNetwork key="setting-network" />
                 <SettingAccount key="setting-account" />
                 <SettingReliability key="setting-reliability" />
+                <SettingAutoStrategy key="setting-auto-strategy" />
                 <SettingSyncTasks key="setting-sync-tasks" />
                 <SettingData key="setting-data" />
                 <SettingWebDAVBackup key="setting-webdav-backup" />

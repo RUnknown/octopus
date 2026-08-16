@@ -52,6 +52,9 @@ func PreviewCandidates(group model.Group) CandidatePreview {
 			return items[i].ID < items[j].ID
 		})
 		return CandidatePreview{Items: items, Exact: false, Note: "diagnostic order by weight; production order is weighted-random"}
+	case model.GroupModeAuto:
+		auto := &Auto{}
+		return CandidatePreview{Items: auto.Candidates(items), Exact: false, Note: "auto strategy snapshot; order depends on live success rate & latency statistics"}
 	case model.GroupModeRandom:
 		fallthrough
 	default:

@@ -446,6 +446,32 @@
         "reliability": {
             "title": "Reliability"
         },
+        "autoStrategy": {
+            "title": "Auto Selection Strategy",
+            "description": "Configure the auto channel selection strategy (Auto mode). Channels with insufficient samples are explored first, then selected dynamically based on success rate and latency.",
+            "section": "Auto Strategy Parameters",
+            "hint": "Configure auto channel selection strategy. Channels with insufficient samples are explored first, then selected based on success rate.",
+            "minSamples": {
+                "label": "Min Samples",
+                "placeholder": "10",
+                "description": "Minimum requests before success rate is used for selection"
+            },
+            "timeWindow": {
+                "label": "Time Window (s)",
+                "placeholder": "300",
+                "description": "Time window for computing success rate"
+            },
+            "sampleThreshold": {
+                "label": "Sample Threshold",
+                "placeholder": "100",
+                "description": "Maximum samples retained in the sliding window"
+            },
+            "latencyWeight": {
+                "label": "Latency Weight (0-100)",
+                "placeholder": "30",
+                "description": "Higher values bias auto strategy toward low-latency channels; lower values favor success rate."
+            }
+        },
         "syncTasks": {
             "title": "Sync & Scheduled Tasks",
             "intervalPlaceholder": "Interval (hours)",
@@ -630,7 +656,8 @@
             "roundRobin": "Round Robin",
             "random": "Random",
             "failover": "Failover",
-            "weighted": "Weighted"
+            "weighted": "Weighted",
+            "auto": "Auto"
         },
         "health": {
             "title": "Health",

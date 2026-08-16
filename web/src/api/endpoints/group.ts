@@ -23,6 +23,7 @@ export enum GroupMode {
     Random = 2,
     Failover = 3,
     Weighted = 4,
+    Auto = 5,
 }
 
 /**

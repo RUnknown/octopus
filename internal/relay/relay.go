@@ -312,6 +312,8 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		if !result.Success && !result.Written && !result.Canceled && !result.ResetConversation {
 			failureKind := circuitFailureKind(group.RetryEnabled, result.StatusCode)
 			balancer.RecordFailure(channel.ID, usedKey.ID, internalRequest.Model, failureKind)
+			// Auto策略：记录失败
+			balancer.RecordAutoFailure(channel.ID, internalRequest.Model)
 			outlierwindow.Report(channel.ID, false, result.StatusCode, time.Now())
 			if failureKind == balancer.FailureHard {
 				maybeLearnManagedRoute(c.Request.Context(), channel.ID, internalRequest.Model, inboundType, result.Err)
@@ -471,6 +473,9 @@ func (ra *relayAttempt) attempt() attemptResult {
 
 		// 熔断器：记录成功
 		balancer.RecordSuccess(ra.channel.ID, ra.usedKey.ID, ra.internalRequest.Model)
+		// Auto策略：记录成功与延迟（毫秒）
+		balancer.RecordAutoSuccess(ra.channel.ID, ra.internalRequest.Model)
+		balancer.RecordAutoLatency(ra.channel.ID, ra.internalRequest.Model, span.Duration().Milliseconds())
 		// 会话保持：更新粘性记录
 		balancer.SetSticky(ra.apiKeyID, ra.requestModel, ra.channel.ID, ra.usedKey.ID)
 
@@ -519,6 +524,9 @@ func (ra *relayAttempt) attempt() attemptResult {
 				RequestSuccess: 1,
 			})
 			balancer.RecordSuccess(ra.channel.ID, ra.usedKey.ID, ra.internalRequest.Model)
+			// Auto策略：记录成功与延迟（毫秒）
+			balancer.RecordAutoSuccess(ra.channel.ID, ra.internalRequest.Model)
+			balancer.RecordAutoLatency(ra.channel.ID, ra.internalRequest.Model, span.Duration().Milliseconds())
 			balancer.SetSticky(ra.apiKeyID, ra.requestModel, ra.channel.ID, ra.usedKey.ID)
 			log.Debugf("client canceled after completed stream, treating as success")
 			return attemptResult{Success: true, StatusCode: statusCode}

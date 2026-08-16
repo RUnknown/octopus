@@ -215,6 +215,9 @@ func HandleResponsesCompact(c *gin.Context) {
 			})
 			op.StatsChannelUpdate(channel.ID, dbmodel.StatsMetrics{RequestSuccess: 1})
 			balancer.RecordSuccess(channel.ID, usedKey.ID, requestModel)
+			// Auto策略：记录成功与延迟（毫秒），与 relay 主链路一致
+			balancer.RecordAutoSuccess(channel.ID, requestModel)
+			balancer.RecordAutoLatency(channel.ID, requestModel, span.Duration().Milliseconds())
 			balancer.SetSticky(apiKeyID, requestModel, channel.ID, usedKey.ID)
 			outlierwindow.Report(channel.ID, true, statusCode, time.Now())
 			metrics.SaveWithChannelStats(c.Request.Context(), true, nil, iter.Attempts(), false)
@@ -230,6 +233,8 @@ func HandleResponsesCompact(c *gin.Context) {
 		})
 		failureKind := circuitFailureKind(group.RetryEnabled, statusCode)
 		balancer.RecordFailure(channel.ID, usedKey.ID, requestModel, failureKind)
+		// Auto策略：记录失败，与 relay 主链路一致
+		balancer.RecordAutoFailure(channel.ID, requestModel)
 		outlierwindow.Report(channel.ID, false, statusCode, time.Now())
 		lastErr = attemptErr
 		lastStatusCode = statusCode

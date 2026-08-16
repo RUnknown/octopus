@@ -49,6 +49,11 @@ export const SettingKey = {
     WebDAVBackupInterval: 'webdav_backup_interval',
     WebDAVRetentionCount: 'webdav_retention_count',
     WebDAVIncludeStats: 'webdav_include_stats',
+    RelayLogMaxContentSizeMB: 'relay_log_max_content_size_mb',
+    AutoStrategyMinSamples: 'auto_strategy_min_samples',
+    AutoStrategyTimeWindow: 'auto_strategy_time_window',
+    AutoStrategySampleThreshold: 'auto_strategy_sample_threshold',
+    AutoStrategyLatencyWeight: 'auto_strategy_latency_weight',
 } as const;
 
 /**

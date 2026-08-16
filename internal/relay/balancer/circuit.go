@@ -1,6 +1,7 @@
 package balancer
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -227,6 +228,62 @@ func IsTripped(channelID, keyID int, modelName string) (tripped bool, remaining 
 	default:
 		return false, 0
 	}
+}
+
+// isKeyTrippedReadOnly 只读检查单个 key 是否处于熔断状态，不触发 Open->HalfOpen 状态转换。
+// 与 IsTripped 的区别：IsTripped 在 Open 冷却到期时会转为 HalfOpen（有副作用），本函数仅做判定。
+func isKeyTrippedReadOnly(channelID, keyID int, modelName string) bool {
+	key := circuitKey(channelID, keyID, modelName)
+	v, ok := globalBreaker.Load(key)
+	if !ok {
+		return false
+	}
+	entry, ok := v.(*circuitEntry)
+	if !ok {
+		return false
+	}
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	switch entry.State {
+	case StateOpen:
+		// 只读：冷却到期也不转 HalfOpen，仅判定当前是否仍应跳过。
+		// 冷却已到期的 Open 视为"即将可探测"，不计为 tripped，避免误降权。
+		cooldown := GetCooldown(entry.TripCount)
+		return time.Since(entry.LastFailureTime) < cooldown
+	case StateHalfOpen:
+		// 半开态视为仍在探测中（tripped），直到探测成功/超时。只读检查不触发状态转换。
+		// 与主仓 IsTripped 的探测超时语义一致：超过冷却时间视为"试探已丢失"，
+		// 不计为 tripped，避免 Auto 策略把卡死的 HalfOpen 渠道误判为全熔断并永久降权
+		//（对齐 lingyuins issue #162 修复思路）。
+		cooldown := GetCooldown(entry.TripCount)
+		if !entry.HalfOpenSince.IsZero() && time.Since(entry.HalfOpenSince) >= cooldown {
+			return false
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+// IsChannelAllKeysTripped 只读检查：channel+model 下所有启用的 key 是否都处于熔断状态。
+// 不会触发 Open->HalfOpen 状态转换（与 IsTripped 不同），仅供 Auto 策略评分降权使用。
+// channel 不存在、无 key、无启用 key 时返回 false（视为健康，不降权）。
+func IsChannelAllKeysTripped(channelID int, modelName string) bool {
+	channel, err := op.ChannelGet(channelID, context.Background())
+	if err != nil || channel == nil {
+		return false
+	}
+	hasEnabledKey := false
+	for _, key := range channel.Keys {
+		if !key.Enabled {
+			continue
+		}
+		hasEnabledKey = true
+		if !isKeyTrippedReadOnly(channelID, key.ID, modelName) {
+			return false // 有任一健康 key，未全熔断
+		}
+	}
+	return hasEnabledKey
 }
 
 type CircuitSnapshot struct {

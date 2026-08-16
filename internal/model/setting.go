@@ -52,6 +52,10 @@ const (
 	SettingKeyWebDAVRetentionCount             SettingKey = "webdav_retention_count"               // WebDAV 保留备份份数
 	SettingKeyWebDAVIncludeStats               SettingKey = "webdav_include_stats"                 // WebDAV 备份是否包含统计数据
 	SettingKeyRelayLogMaxContentSizeMB         SettingKey = "relay_log_max_content_size_mb"         // 单条日志请求与响应正文合计上限（MiB），-1 表示不限制
+	SettingKeyAutoStrategyMinSamples           SettingKey = "auto_strategy_min_samples"             // Auto策略最小样本数阈值
+	SettingKeyAutoStrategyTimeWindow           SettingKey = "auto_strategy_time_window"             // Auto策略时间窗口（秒）
+	SettingKeyAutoStrategySampleThreshold      SettingKey = "auto_strategy_sample_threshold"        // Auto策略滑动窗口大小
+	SettingKeyAutoStrategyLatencyWeight        SettingKey = "auto_strategy_latency_weight"          // Auto策略延迟权重（0-100）
 )
 
 // DefaultRelayLogMaxContentSizeMB 默认单条日志正文上限（MiB）
@@ -107,6 +111,10 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyWebDAVRetentionCount, Value: "10"},           // 默认保留10份
 		{Key: SettingKeyWebDAVIncludeStats, Value: "true"},           // 默认包含统计数据
 		{Key: SettingKeyRelayLogMaxContentSizeMB, Value: "2"},        // 默认单条日志正文上限2MiB
+		{Key: SettingKeyAutoStrategyMinSamples, Value: "10"},         // Auto策略默认最小样本数10次
+		{Key: SettingKeyAutoStrategyTimeWindow, Value: "300"},        // Auto策略默认时间窗口300秒（5分钟）
+		{Key: SettingKeyAutoStrategySampleThreshold, Value: "100"},   // Auto策略默认滑动窗口大小100条
+		{Key: SettingKeyAutoStrategyLatencyWeight, Value: "30"},      // Auto策略默认延迟权重30%
 	}
 }
 
@@ -150,6 +158,12 @@ func (s *Setting) Validate() error {
 			return fmt.Errorf("relay log max content size must be -1 or greater")
 		}
 		return nil
+	case SettingKeyAutoStrategyMinSamples, SettingKeyAutoStrategyTimeWindow, SettingKeyAutoStrategySampleThreshold:
+		// Auto 策略的样本阈值/时间窗/滑动窗口：0 或负值无意义，下限为 1。
+		return validateIntMin(s.Value, 1)
+	case SettingKeyAutoStrategyLatencyWeight:
+		// 延迟权重为百分比，超出 [0,100] 会被运行时回退默认值。
+		return validateIntRange(s.Value, 0, 100)
 	case SettingKeyRelayLogKeepEnabled, SettingKeyResponsesWSEnabled, SettingKeyGroupHealthEnabled, SettingKeyStatsSiteModelBackfilled, SettingKeyOutlierRetireEnabled, SettingKeyWebDAVIncludeStats, SettingKeyAutoGroupCreateMissingEnabled, SettingKeyAutoGroupNormalizeEnabled, SettingKeyCodexMap429To503:
 		if s.Value != "true" && s.Value != "false" {
 			return fmt.Errorf("setting value must be true or false")
