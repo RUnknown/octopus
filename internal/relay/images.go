@@ -374,6 +374,9 @@ func (m *imagesRelayMetrics) saveLog(ctx context.Context, success bool, err erro
 		actualModel = m.RequestModel
 	}
 
+	// 截断 attempts 决策记录条数（防爆库兜底），与 relay 主链路对齐
+	attempts, totalAttempts := capAttemptsForLog(attempts)
+
 	relayLog := model.RelayLog{
 		Time:             m.StartTime.Unix(),
 		RequestModelName: m.RequestModel,
@@ -382,7 +385,7 @@ func (m *imagesRelayMetrics) saveLog(ctx context.Context, success bool, err erro
 		ActualModelName:  actualModel,
 		UseTime:          int(duration.Milliseconds()),
 		Attempts:         attempts,
-		TotalAttempts:    len(attempts),
+		TotalAttempts:    totalAttempts,
 		RequestContent:   m.RequestContent,
 		ResponseContent:  m.ResponseContent,
 	}

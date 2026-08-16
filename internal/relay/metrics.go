@@ -15,6 +15,22 @@ import (
 	"github.com/bestruirui/octopus/internal/utils/tokenizer"
 )
 
+// maxAttemptsLogged 是单条 relay_log 中最多持久化的 attempts 决策记录条数。
+// 防止极端场景（如所有渠道/Key 均不可用时的连续跳过/熔断）attempts 无限膨胀
+// 撑爆数据库（对齐上游 issue #192 修复思路）。
+const maxAttemptsLogged = 256
+
+// capAttemptsForLog 将 attempts 决策记录截断到 maxAttemptsLogged 条为止，
+// 并返回截断后的切片与原始总数（TotalAttempts 用总数，避免信息丢失）。
+func capAttemptsForLog(attempts []model.ChannelAttempt) ([]model.ChannelAttempt, int) {
+	total := len(attempts)
+	if total > maxAttemptsLogged {
+		attempts = attempts[:maxAttemptsLogged]
+		log.Warnf("truncating relay_log attempts from %d to %d entries", total, maxAttemptsLogged)
+	}
+	return attempts, total
+}
+
 // RelayMetrics 负责最终的日志收集与持久化
 type RelayMetrics struct {
 	APIKeyID     int
@@ -249,6 +265,9 @@ func (m *RelayMetrics) saveLog(ctx context.Context, success bool, err error, dur
 		actualModel = m.RequestModel
 	}
 
+	// 截断 attempts 决策记录条数（防爆库兜底）：TotalAttempts 保留原始总数
+	attempts, totalAttempts := capAttemptsForLog(attempts)
+
 	relayLog := model.RelayLog{
 		ID:               m.LogID,
 		Time:             m.StartTime.Unix(),
@@ -258,7 +277,7 @@ func (m *RelayMetrics) saveLog(ctx context.Context, success bool, err error, dur
 		ActualModelName:  actualModel,
 		UseTime:          int(duration.Milliseconds()),
 		Attempts:         attempts,
-		TotalAttempts:    len(attempts),
+		TotalAttempts:    totalAttempts,
 		UsedWS:           m.UsedWS,
 	}
 
