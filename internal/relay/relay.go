@@ -1137,6 +1137,15 @@ func (ra *relayAttempt) sendRequest(req *http.Request) (*http.Response, error) {
 	req = ra.attachRequestTimeout(req)
 
 	response, err := httpClient.Do(req)
+	if err == nil && shouldRetryStreamHTMLResponse(ra.internalRequest, response) {
+		retryResponse, retryErr := retryRequestWithFreshTransport(httpClient, req, response)
+		if retryErr != nil {
+			response = nil
+			err = retryErr
+		} else {
+			response = retryResponse
+		}
+	}
 	if err != nil {
 		if timeoutErr := ra.firstTokenTimeoutIfNeeded(req.Context(), err); timeoutErr != nil {
 			ra.closeFirstTokenBudget()
@@ -1158,6 +1167,65 @@ func (ra *relayAttempt) sendRequest(req *http.Request) (*http.Response, error) {
 		}
 	}
 
+	return response, nil
+}
+
+func shouldRetryStreamHTMLResponse(request *model.InternalLLMRequest, response *http.Response) bool {
+	if request == nil || request.Stream == nil || !*request.Stream ||
+		response == nil || response.StatusCode != http.StatusOK {
+		return false
+	}
+	contentType := strings.ToLower(strings.TrimSpace(response.Header.Get("Content-Type")))
+	if separator := strings.IndexByte(contentType, ';'); separator >= 0 {
+		contentType = strings.TrimSpace(contentType[:separator])
+	}
+	return contentType == "text/html"
+}
+
+func retryRequestWithFreshTransport(baseClient *http.Client, request *http.Request, firstResponse *http.Response) (*http.Response, error) {
+	if baseClient == nil || request == nil || firstResponse == nil {
+		return nil, errors.New("cannot retry stream request with nil client, request, or response")
+	}
+	if request.GetBody == nil {
+		return firstResponse, nil
+	}
+
+	transport, ok := baseClient.Transport.(*http.Transport)
+	if !ok || transport == nil {
+		return firstResponse, nil
+	}
+
+	if firstResponse.Body != nil {
+		_ = firstResponse.Body.Close()
+	}
+
+	body, err := request.GetBody()
+	if err != nil {
+		return nil, fmt.Errorf("failed to recreate request body for stream HTML retry: %w", err)
+	}
+	retryRequest := request.Clone(request.Context())
+	retryRequest.Body = body
+	retryRequest.GetBody = request.GetBody
+	retryRequest.ContentLength = request.ContentLength
+
+	freshTransport := transport.Clone()
+	freshClient := *baseClient
+	freshClient.Transport = freshTransport
+
+	log.Warnf("stream request received HTTP 200 HTML; retrying once with a fresh connection")
+	response, err := freshClient.Do(retryRequest)
+	if err != nil {
+		freshTransport.CloseIdleConnections()
+		return nil, err
+	}
+	if response.Body != nil {
+		response.Body = &closeWithFuncReadCloser{
+			ReadCloser: response.Body,
+			onClose:    freshTransport.CloseIdleConnections,
+		}
+	} else {
+		freshTransport.CloseIdleConnections()
+	}
 	return response, nil
 }
 

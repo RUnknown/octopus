@@ -19,6 +19,7 @@ import (
 	"github.com/bestruirui/octopus/internal/utils/iolimit"
 	"github.com/bestruirui/octopus/internal/utils/log"
 	"github.com/bestruirui/octopus/internal/utils/xurl"
+	"github.com/tmaxmax/go-sse"
 )
 
 type MessageOutbound struct {
@@ -301,6 +302,10 @@ func (o *MessageOutbound) TransformResponse(ctx context.Context, response *http.
 		return nil, fmt.Errorf("HTTP error %d: %s", response.StatusCode, string(body))
 	}
 
+	if looksLikeAnthropicSSE(body) {
+		return aggregateAnthropicSSE(body)
+	}
+
 	var anthropicResp anthropicModel.Message
 	if err := json.Unmarshal(body, &anthropicResp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal anthropic response: %w", err)
@@ -308,6 +313,233 @@ func (o *MessageOutbound) TransformResponse(ctx context.Context, response *http.
 
 	// Convert to internal response
 	return convertToLLMResponse(&anthropicResp), nil
+}
+
+func looksLikeAnthropicSSE(body []byte) bool {
+	prefix := bytes.TrimSpace(body)
+	prefix = bytes.TrimPrefix(prefix, []byte{0xef, 0xbb, 0xbf})
+	prefix = bytes.TrimSpace(prefix)
+	return bytes.HasPrefix(prefix, []byte("event:")) || bytes.HasPrefix(prefix, []byte("data:"))
+}
+
+func aggregateAnthropicSSE(body []byte) (*model.InternalLLMResponse, error) {
+	readCfg := &sse.ReadConfig{MaxEventSize: len(body) + 1}
+	var message *anthropicModel.Message
+	toolInputs := make(map[int]*strings.Builder)
+	sawEvent := false
+	reachedTerminal := false
+
+	for event, readErr := range sse.Read(bytes.NewReader(body), readCfg) {
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to parse Anthropic SSE response: %w", readErr)
+		}
+		data := strings.TrimSpace(event.Data)
+		if data == "" {
+			continue
+		}
+		if data == "[DONE]" {
+			continue
+		}
+
+		var streamEvent anthropicModel.StreamEvent
+		if err := json.Unmarshal([]byte(data), &streamEvent); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal Anthropic SSE event: %w", err)
+		}
+		sawEvent = true
+
+		switch streamEvent.Type {
+		case "message_start":
+			if streamEvent.Message == nil {
+				return nil, fmt.Errorf("Anthropic SSE message_start is missing message")
+			}
+			message = &anthropicModel.Message{
+				ID:      streamEvent.Message.ID,
+				Type:    streamEvent.Message.Type,
+				Role:    streamEvent.Message.Role,
+				Content: append([]anthropicModel.MessageContentBlock(nil), streamEvent.Message.Content...),
+				Model:   streamEvent.Message.Model,
+				Usage:   cloneAnthropicUsage(streamEvent.Message.Usage),
+			}
+
+		case "content_block_start":
+			if message == nil || streamEvent.ContentBlock == nil {
+				return nil, fmt.Errorf("Anthropic SSE content_block_start arrived before message_start")
+			}
+			index := anthropicStreamIndex(streamEvent.Index)
+			if index < 0 {
+				return nil, fmt.Errorf("Anthropic SSE content block index must be non-negative")
+			}
+			ensureAnthropicContentIndex(message, index)
+			message.Content[index] = *streamEvent.ContentBlock
+			if streamEvent.ContentBlock.Type == "tool_use" {
+				toolInputs[index] = &strings.Builder{}
+			}
+
+		case "content_block_delta":
+			if message == nil || streamEvent.Delta == nil || streamEvent.Delta.Type == nil {
+				return nil, fmt.Errorf("Anthropic SSE content_block_delta is incomplete")
+			}
+			index := anthropicStreamIndex(streamEvent.Index)
+			if index < 0 || index >= len(message.Content) {
+				return nil, fmt.Errorf("Anthropic SSE content block index %d is out of range", index)
+			}
+			block := &message.Content[index]
+			switch *streamEvent.Delta.Type {
+			case "text_delta":
+				appendStringPointer(&block.Text, streamEvent.Delta.Text)
+			case "thinking_delta":
+				appendStringPointer(&block.Thinking, streamEvent.Delta.Thinking)
+			case "signature_delta":
+				appendStringPointer(&block.Signature, streamEvent.Delta.Signature)
+			case "input_json_delta":
+				builder := toolInputs[index]
+				if builder == nil {
+					builder = &strings.Builder{}
+					toolInputs[index] = builder
+				}
+				if streamEvent.Delta.PartialJSON != nil {
+					builder.WriteString(*streamEvent.Delta.PartialJSON)
+				}
+			}
+
+		case "content_block_stop":
+			if message == nil {
+				return nil, fmt.Errorf("Anthropic SSE content_block_stop arrived before message_start")
+			}
+			index := anthropicStreamIndex(streamEvent.Index)
+			if index >= 0 && index < len(message.Content) {
+				finalizeAnthropicToolInput(&message.Content[index], toolInputs[index])
+			}
+
+		case "message_delta":
+			if message == nil {
+				return nil, fmt.Errorf("Anthropic SSE message_delta arrived before message_start")
+			}
+			if streamEvent.Delta != nil {
+				if streamEvent.Delta.StopReason != nil {
+					reason := *streamEvent.Delta.StopReason
+					message.StopReason = &reason
+				}
+				if streamEvent.Delta.StopSequence != nil {
+					sequence := *streamEvent.Delta.StopSequence
+					message.StopSequence = &sequence
+				}
+			}
+			message.Usage = mergeAnthropicUsage(message.Usage, streamEvent.Usage)
+
+		case "message_stop":
+			if message == nil {
+				return nil, fmt.Errorf("Anthropic SSE message_stop arrived before message_start")
+			}
+			if message.StopReason == nil {
+				defaultReason := "end_turn"
+				message.StopReason = &defaultReason
+			}
+			reachedTerminal = true
+
+		case "error":
+			if streamEvent.Error == nil {
+				return nil, fmt.Errorf("Anthropic SSE error event is missing error detail")
+			}
+			return nil, &model.ResponseError{
+				StatusCode: mapAnthropicErrorTypeToStatus(streamEvent.Error.Type),
+				Detail: model.ErrorDetail{
+					Type:    streamEvent.Error.Type,
+					Message: streamEvent.Error.Message,
+				},
+			}
+		}
+	}
+
+	if !sawEvent || message == nil {
+		return nil, fmt.Errorf("Anthropic SSE response did not contain a message")
+	}
+	if !reachedTerminal {
+		return nil, fmt.Errorf("Anthropic SSE response ended before message_stop")
+	}
+	for index, builder := range toolInputs {
+		if index >= 0 && index < len(message.Content) {
+			finalizeAnthropicToolInput(&message.Content[index], builder)
+		}
+	}
+	return convertToLLMResponse(message), nil
+}
+
+func ensureAnthropicContentIndex(message *anthropicModel.Message, index int) {
+	for len(message.Content) <= index {
+		message.Content = append(message.Content, anthropicModel.MessageContentBlock{})
+	}
+}
+
+func appendStringPointer(destination **string, delta *string) {
+	if delta == nil {
+		return
+	}
+	if *destination == nil {
+		value := ""
+		*destination = &value
+	}
+	**destination += *delta
+}
+
+func finalizeAnthropicToolInput(block *anthropicModel.MessageContentBlock, builder *strings.Builder) {
+	if block == nil || block.Type != "tool_use" {
+		return
+	}
+	if builder != nil && builder.Len() > 0 {
+		block.Input = json.RawMessage(builder.String())
+	}
+	if len(block.Input) == 0 {
+		block.Input = json.RawMessage(`{}`)
+	}
+}
+
+func cloneAnthropicUsage(usage *anthropicModel.Usage) *anthropicModel.Usage {
+	if usage == nil {
+		return nil
+	}
+	cloned := *usage
+	if usage.CacheCreation != nil {
+		cacheCreation := *usage.CacheCreation
+		cloned.CacheCreation = &cacheCreation
+	}
+	return &cloned
+}
+
+func mergeAnthropicUsage(current, delta *anthropicModel.Usage) *anthropicModel.Usage {
+	if delta == nil {
+		return current
+	}
+	if current == nil {
+		return cloneAnthropicUsage(delta)
+	}
+	if delta.InputTokens != 0 {
+		current.InputTokens = delta.InputTokens
+	}
+	if delta.OutputTokens != 0 {
+		current.OutputTokens = delta.OutputTokens
+	}
+	if delta.CacheCreationInputTokens != 0 {
+		current.CacheCreationInputTokens = delta.CacheCreationInputTokens
+	}
+	if delta.CacheReadInputTokens != 0 {
+		current.CacheReadInputTokens = delta.CacheReadInputTokens
+	}
+	if delta.ServiceTier != "" {
+		current.ServiceTier = delta.ServiceTier
+	}
+	if delta.CacheCreation != nil {
+		if current.CacheCreation == nil {
+			current.CacheCreation = &anthropicModel.CacheCreationUsage{}
+		}
+		if delta.CacheCreation.Ephemeral5mInputTokens != 0 {
+			current.CacheCreation.Ephemeral5mInputTokens = delta.CacheCreation.Ephemeral5mInputTokens
+		}
+		if delta.CacheCreation.Ephemeral1hInputTokens != 0 {
+			current.CacheCreation.Ephemeral1hInputTokens = delta.CacheCreation.Ephemeral1hInputTokens
+		}
+	}
+	return current
 }
 
 func (o *MessageOutbound) TransformStreamEvent(ctx context.Context, eventData []byte) ([]model.StreamEvent, error) {

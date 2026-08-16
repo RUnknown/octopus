@@ -41,6 +41,85 @@ func TestParseRequestReturnsBadRequestForInvalidPayload(t *testing.T) {
 	}
 }
 
+func TestSendRequestRetriesStreamHTMLOnceWithFreshConnection(t *testing.T) {
+	var calls atomic.Int32
+	remoteAddresses := make(chan string, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		remoteAddresses <- r.RemoteAddr
+		if calls.Add(1) == 1 {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = io.WriteString(w, "<html><title>temporary edge error</title></html>")
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	stream := true
+	internalReq := &transformerModel.InternalLLMRequest{Model: "test-model", Stream: &stream}
+	ra := &relayAttempt{
+		relayRequest: &relayRequest{internalRequest: internalReq},
+		channel:      &model.Channel{ProxyMode: model.ProxyUsageModeDirect},
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL, bytes.NewReader([]byte(`{"stream":true}`)))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+
+	response, err := ra.sendRequest(req)
+	if err != nil {
+		t.Fatalf("sendRequest() error = %v", err)
+	}
+	defer response.Body.Close()
+
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("expected exactly two upstream attempts, got %d", got)
+	}
+	if got := response.Header.Get("Content-Type"); got != "text/event-stream" {
+		t.Fatalf("expected retry response, got content-type %q", got)
+	}
+	firstRemote := <-remoteAddresses
+	secondRemote := <-remoteAddresses
+	if firstRemote == secondRemote {
+		t.Fatalf("expected retry to use a fresh connection, both requests used %s", firstRemote)
+	}
+}
+
+func TestSendRequestRetriesStreamHTMLAtMostOnce(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = io.WriteString(w, "<html><title>still unavailable</title></html>")
+	}))
+	defer server.Close()
+
+	stream := true
+	internalReq := &transformerModel.InternalLLMRequest{Model: "test-model", Stream: &stream}
+	ra := &relayAttempt{
+		relayRequest: &relayRequest{internalRequest: internalReq},
+		channel:      &model.Channel{ProxyMode: model.ProxyUsageModeDirect},
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL, bytes.NewReader([]byte(`{"stream":true}`)))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+
+	response, err := ra.sendRequest(req)
+	if err != nil {
+		t.Fatalf("sendRequest() error = %v", err)
+	}
+	defer response.Body.Close()
+
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("expected one retry only, got %d attempts", got)
+	}
+	if got := response.Header.Get("Content-Type"); got != "text/html" {
+		t.Fatalf("expected second HTML response to be returned for normal validation, got %q", got)
+	}
+}
+
 func TestHandleStreamResponsePassthroughAnthropicPreservesRawSSE(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
