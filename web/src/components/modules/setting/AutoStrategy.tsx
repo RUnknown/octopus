@@ -2,12 +2,13 @@
 
 import { useTranslations } from 'next-intl';
 import { Sparkles, Hash, Clock, SlidersHorizontal, Scale } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { SettingKey } from '@/api/endpoints/setting';
 import { SettingCard, SettingRow, SettingSection, useSettingField } from './shared';
 
 // min/max 与后端 model.Setting.Validate() 的边界保持一致，前端先行约束整数范围。
-const AUTO_STRATEGY_FIELDS: { key: string; labelKey: string; icon: React.ComponentType<{ className?: string }>; min: number; max?: number }[] = [
+const AUTO_STRATEGY_FIELDS: { key: string; labelKey: string; icon: LucideIcon; min: number; max?: number }[] = [
     { key: SettingKey.AutoStrategyMinSamples, labelKey: 'minSamples', icon: Hash, min: 1 },
     { key: SettingKey.AutoStrategyTimeWindow, labelKey: 'timeWindow', icon: Clock, min: 1 },
     { key: SettingKey.AutoStrategySampleThreshold, labelKey: 'sampleThreshold', icon: SlidersHorizontal, min: 1 },
@@ -19,7 +20,7 @@ function NumberFieldRow({ settingKey, label, placeholder, tooltip, icon, min, ma
     label: string;
     placeholder: string;
     tooltip?: React.ReactNode;
-    icon?: React.ComponentType<{ className?: string }>;
+    icon?: LucideIcon;
     min?: number;
     max?: number;
 }) {
