@@ -2,6 +2,8 @@
 
 Octopus 是一个面向个人和小团队的自托管 LLM API 网关与管理控制台。它把多个模型供应商和中转站统一到一组兼容 API 后面，并提供渠道管理、协议转换、负载均衡、故障转移、缓存统计和请求诊断。
 
+> 社区推荐：[Linux.do](https://linux.do/)
+
 本仓库从 [`tianxia3111/octopus`](https://github.com/tianxia3111/octopus) 派生，项目源自 [`bestruirui/octopus`](https://github.com/bestruirui/octopus)。当前分支在上游能力之上重点增强了站点同步、OpenAI Responses、WebSocket Relay、可观测性和路由诊断。
 
 English: [README.md](README.md)
