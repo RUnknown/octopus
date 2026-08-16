@@ -3,13 +3,156 @@ package anthropic
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"net/http"
 	"strings"
 	"testing"
 
 	anthropicModel "github.com/bestruirui/octopus/internal/transformer/inbound/anthropic"
 	"github.com/bestruirui/octopus/internal/transformer/model"
 )
+
+func TestTransformResponseAggregatesMislabelledAnthropicSSE(t *testing.T) {
+	rawSSE := strings.Join([]string{
+		"event: message_start",
+		`data: {"type":"message_start","message":{"id":"msg_sse","type":"message","role":"assistant","model":"claude-test","content":[],"usage":{"input_tokens":3,"output_tokens":0}}}`,
+		"",
+		"event: content_block_start",
+		`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+		"",
+		"event: content_block_delta",
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hel"}}`,
+		"",
+		"event: content_block_delta",
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"lo"}}`,
+		"",
+		"event: content_block_stop",
+		`data: {"type":"content_block_stop","index":0}`,
+		"",
+		"event: message_delta",
+		`data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":5}}`,
+		"",
+		"event: message_stop",
+		`data: {"type":"message_stop"}`,
+		"",
+	}, "\n")
+	response := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(rawSSE)),
+	}
+
+	got, err := (&MessageOutbound{}).TransformResponse(context.Background(), response)
+	if err != nil {
+		t.Fatalf("TransformResponse() error = %v", err)
+	}
+	if got.ID != "msg_sse" || got.Model != "claude-test" {
+		t.Fatalf("unexpected response identity: id=%q model=%q", got.ID, got.Model)
+	}
+	if len(got.Choices) != 1 || got.Choices[0].Message == nil ||
+		got.Choices[0].Message.Content.Content == nil ||
+		*got.Choices[0].Message.Content.Content != "hello" {
+		t.Fatalf("unexpected aggregated content: %+v", got.Choices)
+	}
+	if got.Choices[0].FinishReason == nil || *got.Choices[0].FinishReason != "stop" {
+		t.Fatalf("unexpected finish reason: %+v", got.Choices[0].FinishReason)
+	}
+	if got.Usage == nil || got.Usage.PromptTokens != 3 || got.Usage.CompletionTokens != 5 {
+		t.Fatalf("unexpected usage: %+v", got.Usage)
+	}
+}
+
+func TestTransformResponseMislabelledAnthropicSSEPreservesThinkingAndToolInput(t *testing.T) {
+	rawSSE := strings.Join([]string{
+		`data: {"type":"message_start","message":{"id":"msg_tools","type":"message","role":"assistant","model":"claude-test","content":[],"usage":{"input_tokens":2,"output_tokens":0}}}`,
+		"",
+		`data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}`,
+		"",
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"reason"}}`,
+		"",
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig"}}`,
+		"",
+		`data: {"type":"content_block_stop","index":0}`,
+		"",
+		`data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"tool_1","name":"lookup","input":{}}}`,
+		"",
+		`data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"q\":"}}`,
+		"",
+		`data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\"test\"}"}}`,
+		"",
+		`data: {"type":"content_block_stop","index":1}`,
+		"",
+		`data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":4}}`,
+		"",
+		`data: {"type":"message_stop"}`,
+		"",
+	}, "\n")
+	response := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json; charset=utf-8"}},
+		Body:       io.NopCloser(strings.NewReader(rawSSE)),
+	}
+
+	got, err := (&MessageOutbound{}).TransformResponse(context.Background(), response)
+	if err != nil {
+		t.Fatalf("TransformResponse() error = %v", err)
+	}
+	message := got.Choices[0].Message
+	if message == nil || message.ReasoningContent == nil || *message.ReasoningContent != "reason" ||
+		message.ReasoningSignature == nil || *message.ReasoningSignature != "sig" {
+		t.Fatalf("thinking block was not preserved: %+v", message)
+	}
+	if len(message.ToolCalls) != 1 || message.ToolCalls[0].ID != "tool_1" ||
+		message.ToolCalls[0].Function.Name != "lookup" ||
+		message.ToolCalls[0].Function.Arguments != `{"q":"test"}` {
+		t.Fatalf("tool input was not aggregated: %+v", message.ToolCalls)
+	}
+}
+
+func TestTransformResponseRejectsTruncatedMislabelledAnthropicSSE(t *testing.T) {
+	rawSSE := strings.Join([]string{
+		`data: {"type":"message_start","message":{"id":"msg_partial","type":"message","role":"assistant","model":"claude-test","content":[]}}`,
+		"",
+		`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+		"",
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"partial"}}`,
+		"",
+	}, "\n")
+	response := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(rawSSE)),
+	}
+
+	_, err := (&MessageOutbound{}).TransformResponse(context.Background(), response)
+	if err == nil || !strings.Contains(err.Error(), "ended before message_stop") {
+		t.Fatalf("expected truncated SSE error, got %v", err)
+	}
+}
+
+func TestTransformResponseMislabelledAnthropicSSEPropagatesErrorEvent(t *testing.T) {
+	rawSSE := strings.Join([]string{
+		`event: error`,
+		`data: {"type":"error","error":{"type":"overloaded_error","message":"temporarily overloaded"}}`,
+		"",
+	}, "\n")
+	response := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(rawSSE)),
+	}
+
+	_, err := (&MessageOutbound{}).TransformResponse(context.Background(), response)
+	var responseErr *model.ResponseError
+	if !errors.As(err, &responseErr) {
+		t.Fatalf("expected ResponseError, got %v", err)
+	}
+	if responseErr.StatusCode != 529 ||
+		responseErr.Detail.Message != "temporarily overloaded" {
+		t.Fatalf("unexpected SSE error: %+v", responseErr)
+	}
+}
 
 func TestTransformRequestRawRewritesModel(t *testing.T) {
 	outbound := &MessageOutbound{}
