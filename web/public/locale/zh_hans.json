@@ -193,6 +193,11 @@
             "label": "代理地址",
             "placeholder": "请输入代理地址"
         },
+        "modelPriceUrl": {
+            "label": "模型价格代理地址",
+            "placeholder": "https://example.com/api.json",
+            "description": "用于获取模型价格的完整镜像或反代接口地址；留空时访问 https://models.dev/api.json"
+        },
         "apiBaseUrl": {
             "label": "API 地址",
             "placeholder": "https://octopus.example.com",
