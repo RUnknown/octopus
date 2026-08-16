@@ -152,7 +152,19 @@ def main():
     
     entries = []
     model_count = 0
-    
+    # 记录已写入的 model_id，避免上游数据源出现重复键导致生成的
+    # presets.go 编译失败（Go map literal 不允许 duplicate key）。
+    seen: set[str] = set()
+
+    def add_entry(model_id: str, cost: dict) -> bool:
+        key = model_id.lower()
+        if key in seen:
+            print(f"  duplicate model id '{key}' skipped")
+            return False
+        seen.add(key)
+        entries.append(generate_entry(key, cost))
+        return True
+
     for provider in PROVIDERS:
         if provider not in raw_price:
             print(f"  Provider '{provider}' not found, skipping...")
@@ -169,8 +181,8 @@ def main():
                 continue
             
             # 添加原始模型
-            entries.append(generate_entry(model_id, cost))
-            provider_count += 1
+            if add_entry(model_id, cost):
+                provider_count += 1
             
             # 收集所有别名
             aliases = []
@@ -184,8 +196,8 @@ def main():
             
             # 添加别名 (去重)
             for alias in set(aliases):
-                entries.append(generate_entry(alias.lower(), cost))
-                provider_count += 1
+                if add_entry(alias, cost):
+                    provider_count += 1
             
         print(f"  {provider}: {provider_count} models")
         model_count += provider_count
