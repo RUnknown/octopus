@@ -172,6 +172,7 @@ func HandleResponsesCompact(c *gin.Context) {
 		var statusCode int
 		var retryAfter time.Duration
 		var success bool
+		var attemptLatency time.Duration
 
 		for retryNum := 0; retryNum < maxSameChannelRetries; retryNum++ {
 			if retryNum > 0 {
@@ -194,7 +195,9 @@ func HandleResponsesCompact(c *gin.Context) {
 				view.LastMessage = "upstream compact request in progress"
 			})
 
+			attemptStart := time.Now()
 			statusCode, retryAfter, attemptErr = forwardResponsesCompact(c, metrics, iter, channel, usedKey, body)
+			attemptLatency = time.Since(attemptStart)
 			if attemptErr == nil {
 				success = true
 				break
@@ -217,7 +220,7 @@ func HandleResponsesCompact(c *gin.Context) {
 			balancer.RecordSuccess(channel.ID, usedKey.ID, requestModel)
 			// Auto策略：记录成功与延迟（毫秒），与 relay 主链路一致
 			balancer.RecordAutoSuccess(channel.ID, requestModel)
-			balancer.RecordAutoLatency(channel.ID, requestModel, span.Duration().Milliseconds())
+			balancer.RecordAutoLatency(channel.ID, requestModel, attemptLatency.Milliseconds())
 			balancer.SetSticky(apiKeyID, requestModel, channel.ID, usedKey.ID)
 			outlierwindow.Report(channel.ID, true, statusCode, time.Now())
 			metrics.SaveWithChannelStats(c.Request.Context(), true, nil, iter.Attempts(), false)

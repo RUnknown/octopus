@@ -7,11 +7,11 @@ import { SettingKey } from '@/api/endpoints/setting';
 import { SettingCard, SettingRow, SettingSection, useSettingField } from './shared';
 
 // min/max 与后端 model.Setting.Validate() 的边界保持一致，前端先行约束整数范围。
-const AUTO_STRATEGY_FIELDS: { key: string; labelKey: string; min: number; max?: number }[] = [
-    { key: SettingKey.AutoStrategyMinSamples, labelKey: 'minSamples', min: 1 },
-    { key: SettingKey.AutoStrategyTimeWindow, labelKey: 'timeWindow', min: 1 },
-    { key: SettingKey.AutoStrategySampleThreshold, labelKey: 'sampleThreshold', min: 1 },
-    { key: SettingKey.AutoStrategyLatencyWeight, labelKey: 'latencyWeight', min: 0, max: 100 },
+const AUTO_STRATEGY_FIELDS: { key: string; labelKey: string; icon: React.ComponentType<{ className?: string }>; min: number; max?: number }[] = [
+    { key: SettingKey.AutoStrategyMinSamples, labelKey: 'minSamples', icon: Hash, min: 1 },
+    { key: SettingKey.AutoStrategyTimeWindow, labelKey: 'timeWindow', icon: Clock, min: 1 },
+    { key: SettingKey.AutoStrategySampleThreshold, labelKey: 'sampleThreshold', icon: SlidersHorizontal, min: 1 },
+    { key: SettingKey.AutoStrategyLatencyWeight, labelKey: 'latencyWeight', icon: Scale, min: 0, max: 100 },
 ];
 
 function NumberFieldRow({ settingKey, label, placeholder, tooltip, icon, min, max }: {
@@ -47,39 +47,18 @@ export function SettingAutoStrategy() {
     return (
         <SettingCard icon={Sparkles} title={t('autoStrategy.title')} tooltip={t('autoStrategy.description')}>
             <SettingSection title={t('autoStrategy.section')} tooltip={t('autoStrategy.hint')} />
-            <NumberFieldRow
-                settingKey={SettingKey.AutoStrategyMinSamples}
-                label={t('autoStrategy.minSamples.label')}
-                placeholder={t('autoStrategy.minSamples.placeholder')}
-                tooltip={t('autoStrategy.minSamples.description')}
-                icon={Hash}
-                min={1}
-            />
-            <NumberFieldRow
-                settingKey={SettingKey.AutoStrategyTimeWindow}
-                label={t('autoStrategy.timeWindow.label')}
-                placeholder={t('autoStrategy.timeWindow.placeholder')}
-                tooltip={t('autoStrategy.timeWindow.description')}
-                icon={Clock}
-                min={1}
-            />
-            <NumberFieldRow
-                settingKey={SettingKey.AutoStrategySampleThreshold}
-                label={t('autoStrategy.sampleThreshold.label')}
-                placeholder={t('autoStrategy.sampleThreshold.placeholder')}
-                tooltip={t('autoStrategy.sampleThreshold.description')}
-                icon={SlidersHorizontal}
-                min={1}
-            />
-            <NumberFieldRow
-                settingKey={SettingKey.AutoStrategyLatencyWeight}
-                label={t('autoStrategy.latencyWeight.label')}
-                placeholder={t('autoStrategy.latencyWeight.placeholder')}
-                tooltip={t('autoStrategy.latencyWeight.description')}
-                icon={Scale}
-                min={0}
-                max={100}
-            />
+            {AUTO_STRATEGY_FIELDS.map(({ key, labelKey, icon, min, max }) => (
+                <NumberFieldRow
+                    key={key}
+                    settingKey={key}
+                    label={t(`autoStrategy.${labelKey}.label`)}
+                    placeholder={t(`autoStrategy.${labelKey}.placeholder`)}
+                    tooltip={t(`autoStrategy.${labelKey}.description`)}
+                    icon={icon}
+                    min={min}
+                    max={max}
+                />
+            ))}
         </SettingCard>
     );
 }
