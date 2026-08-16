@@ -2,6 +2,8 @@ package model
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -113,6 +115,37 @@ type ManagedChannelSource struct {
 type BaseUrl struct {
 	URL   string `json:"url"`
 	Delay int    `json:"delay"`
+}
+
+func ValidateChannelBaseURLs(items []BaseUrl) error {
+	if len(items) == 0 {
+		return fmt.Errorf("channel base URL is required")
+	}
+	for index, item := range items {
+		raw := strings.TrimSpace(item.URL)
+		if raw == "" {
+			return fmt.Errorf("channel base URL %d is required", index+1)
+		}
+		parsed, err := url.Parse(raw)
+		if err != nil {
+			return fmt.Errorf("channel base URL %d is invalid: %w", index+1, err)
+		}
+		scheme := strings.ToLower(parsed.Scheme)
+		if scheme != "http" && scheme != "https" {
+			return fmt.Errorf("channel base URL %d must use http or https", index+1)
+		}
+		if parsed.Host == "" {
+			return fmt.Errorf("channel base URL %d must have a host", index+1)
+		}
+		rest := strings.TrimPrefix(strings.ToLower(raw), scheme+"://")
+		if strings.HasPrefix(rest, "http://") || strings.HasPrefix(rest, "https://") {
+			return fmt.Errorf("channel base URL %d contains a duplicated URL scheme", index+1)
+		}
+		if item.Delay < 0 {
+			return fmt.Errorf("channel base URL %d delay must be non-negative", index+1)
+		}
+	}
+	return nil
 }
 
 type CustomHeader struct {

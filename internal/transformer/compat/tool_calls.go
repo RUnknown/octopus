@@ -24,7 +24,51 @@ func PairToolCalls(req *model.InternalLLMRequest) {
 	if req == nil || len(req.Messages) == 0 {
 		return
 	}
-	req.Messages = FixOrphanedToolCalls(req.Messages)
+	req.Messages = FixOrphanedToolCalls(DeduplicateToolResults(req.Messages))
+}
+
+// DeduplicateToolResults keeps a single result per tool-call ID and uses the
+// last result content. Some clients append a corrected tool output instead of
+// replacing the earlier item; Anthropic rejects the resulting duplicate
+// tool_result blocks, while OpenAI-compatible providers handle them
+// inconsistently.
+func DeduplicateToolResults(messages []model.Message) []model.Message {
+	if len(messages) == 0 {
+		return messages
+	}
+
+	lastByID := make(map[string]int)
+	for index, message := range messages {
+		if message.Role != "tool" || message.ToolCallID == nil {
+			continue
+		}
+		if id := strings.TrimSpace(*message.ToolCallID); id != "" {
+			lastByID[id] = index
+		}
+	}
+	if len(lastByID) == 0 {
+		return messages
+	}
+
+	emitted := make(map[string]struct{}, len(lastByID))
+	out := make([]model.Message, 0, len(messages))
+	for _, message := range messages {
+		if message.Role != "tool" || message.ToolCallID == nil {
+			out = append(out, message)
+			continue
+		}
+		id := strings.TrimSpace(*message.ToolCallID)
+		if id == "" {
+			out = append(out, message)
+			continue
+		}
+		if _, exists := emitted[id]; exists {
+			continue
+		}
+		emitted[id] = struct{}{}
+		out = append(out, messages[lastByID[id]])
+	}
+	return out
 }
 
 // FixOrphanedToolCalls inserts empty tool_result messages for assistant

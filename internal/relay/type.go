@@ -106,6 +106,13 @@ type relayRequest struct {
 	// 绕过内部模型来回转换，以保证 beta 字段、内容块顺序、thinking 签名等完全透传。
 	rawBody []byte
 
+	// clientHeaders carries the downstream WebSocket handshake headers when
+	// there is no Gin context. Session/thread identity must participate in the
+	// upstream WebSocket pool key so concurrent Codex threads cannot collide.
+	clientHeaders http.Header
+
+	mapFinal429To503 bool
+
 	// streamWriter allows overriding the response writer (nil = use c.Writer)
 	streamWriter StreamWriter
 

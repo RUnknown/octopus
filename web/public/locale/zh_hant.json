@@ -227,6 +227,10 @@
             "label": "分組健康檢查",
             "description": "啟用後顯示首頁分組健康摘要、分組卡片健康狀態，並允許手動執行健康檢查。"
         },
+        "codex429": {
+            "label": "Codex 限流自動重試",
+            "description": "僅對官方 Codex 客戶端生效：所有候選均因 429 失敗時返回 503，讓客戶端按伺服器錯誤策略重試；日誌仍記錄真實 429。"
+        },
         "circuitBreaker": {
             "title": "熔斷器配置",
             "threshold": {
@@ -918,6 +922,30 @@
                 "inputCost": "輸入成本",
                 "outputCost": "輸出成本",
                 "avgWaitTime": "等待時間"
+            },
+            "imageTest": {
+                "action": "測試圖片生成",
+                "hide": "收起圖片測試",
+                "title": "圖片生成測試",
+                "description": "直接使用該供應源和指定金鑰呼叫 /images/generations，不計入業務請求統計。",
+                "model": "模型",
+                "modelPlaceholder": "選擇模型",
+                "key": "金鑰",
+                "keyPlaceholder": "選擇金鑰",
+                "prompt": "提示詞",
+                "promptPlaceholder": "描述要生成的圖片，內容會儲存在目前瀏覽器",
+                "size": "尺寸",
+                "quality": "品質",
+                "background": "背景",
+                "outputFormat": "輸出格式",
+                "generate": "開始生成",
+                "generating": "生成中...",
+                "status": "狀態碼 {status}",
+                "duration": "耗時 {duration} ms",
+                "usedKey": "Key #{key}",
+                "imageAlt": "生成圖片 {index}",
+                "missingImage": "回應中沒有可顯示的圖片",
+                "noImages": "請求成功，但回應中沒有圖片資料。"
             },
             "actions": {
                 "edit": "編輯",

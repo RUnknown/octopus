@@ -53,6 +53,8 @@ func HandleWSResponse(c *gin.Context) {
 	apiKeyID := c.GetInt("api_key_id")
 	supportedModels := c.GetString("supported_models")
 	modelListMode := c.GetString("model_list_mode")
+	clientHeaders := c.Request.Header.Clone()
+	mapFinal429To503 := shouldMapFinalCodex429(clientHeaders)
 
 	log.Debugf("ws client connected (apikey=%d)", apiKeyID)
 
@@ -99,7 +101,10 @@ func HandleWSResponse(c *gin.Context) {
 			continue
 		}
 
-		conversationState = processWSResponseCreate(ctx, conn, data, apiKeyID, supportedModels, modelListMode, downstreamSessionID, conversationState)
+		conversationState = processWSResponseCreate(
+			ctx, conn, data, apiKeyID, supportedModels, modelListMode,
+			downstreamSessionID, conversationState, clientHeaders, mapFinal429To503,
+		)
 	}
 }
 
@@ -112,6 +117,8 @@ func processWSResponseCreate(
 	modelListMode string,
 	downstreamSessionID string,
 	conversationState *wsConversationState,
+	clientHeaders http.Header,
+	mapFinal429To503 bool,
 ) *wsConversationState {
 	var reqBody map[string]json.RawMessage
 	if err := json.Unmarshal(data, &reqBody); err != nil {
@@ -170,7 +177,7 @@ func processWSResponseCreate(
 				view.Stage = "warming_up"
 				view.LastMessage = "warming upstream websocket connection"
 			})
-			if err := bestEffortWarmupUpstreamWS(ctx, apiKeyID, supportedModels, modelListMode, reqBody); err != nil {
+			if err := bestEffortWarmupUpstreamWS(ctx, apiKeyID, supportedModels, modelListMode, reqBody, clientHeaders); err != nil {
 				updateActiveRequest(activeRequestID, func(view *ActiveRequestView) {
 					view.Stage = "failed_attempt"
 					view.LastMessage = err.Error()
@@ -227,7 +234,11 @@ func processWSResponseCreate(
 	}
 
 	requestModel = executionRequest.Model
-	req, group, err := newWSRelayRequest(ctx, conn, inAdapter, apiKeyID, requestModel, cloneInternalRequest(executionRequest), originalRequest, preferredSticky, bodyBytes)
+	req, group, err := newWSRelayRequest(
+		ctx, conn, inAdapter, apiKeyID, requestModel,
+		cloneInternalRequest(executionRequest), originalRequest, preferredSticky, bodyBytes,
+		clientHeaders, mapFinal429To503,
+	)
 	if err != nil {
 		status := 404
 		code := "model_not_found"
@@ -269,7 +280,11 @@ func processWSResponseCreate(
 			apiKeyID, requestModel, failedPreviousResponseID, result.ResetConversation)
 		balancer.DeleteSticky(apiKeyID, requestModel)
 		replayedRequest := conversationState.BuildReplayRequest(originalRequest)
-		replayReq, replayGroup, replayErr := newWSRelayRequest(ctx, conn, inAdapter, apiKeyID, requestModel, replayedRequest, originalRequest, preferredSticky, bodyBytes)
+		replayReq, replayGroup, replayErr := newWSRelayRequest(
+			ctx, conn, inAdapter, apiKeyID, requestModel,
+			replayedRequest, originalRequest, preferredSticky, bodyBytes,
+			clientHeaders, mapFinal429To503,
+		)
 		if replayErr == nil {
 			replayReq.metrics.SetWSMode(dbmodel.RelayLogWSModeReplay)
 			replayReq.metrics.SetWSRecovery(dbmodel.RelayLogWSRecoveryReplay)
@@ -318,6 +333,7 @@ func bestEffortWarmupUpstreamWS(
 	supportedModels string,
 	modelListMode string,
 	reqBody map[string]json.RawMessage,
+	clientHeaders http.Header,
 ) error {
 	requestModel := strings.TrimSpace(extractWSRequestModel(reqBody))
 	if requestModel == "" {
@@ -366,7 +382,7 @@ func bestEffortWarmupUpstreamWS(
 				continue
 			}
 
-			if err := warmupUpstreamWSConnection(ctx, channel, usedKey); err != nil {
+			if err := warmupUpstreamWSConnection(ctx, channel, usedKey, clientHeaders); err != nil {
 				lastErr = err
 				selectOpts.ExcludeKeyIDs[usedKey.ID] = struct{}{}
 				continue
@@ -398,11 +414,11 @@ func extractWSRequestModel(reqBody map[string]json.RawMessage) string {
 	return requestModel
 }
 
-func warmupUpstreamWSConnection(ctx context.Context, channel *dbmodel.Channel, usedKey dbmodel.ChannelKey) error {
+func warmupUpstreamWSConnection(ctx context.Context, channel *dbmodel.Channel, usedKey dbmodel.ChannelKey, clientHeaders http.Header) error {
 	warmupCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 
-	pc := TryUpstreamWS(warmupCtx, channel, channel.GetBaseUrl(), usedKey.ChannelKey, usedKey.ID, nil)
+	pc := TryUpstreamWS(warmupCtx, channel, channel.GetBaseUrl(), usedKey.ChannelKey, usedKey.ID, clientHeaders)
 	if pc == nil {
 		return fmt.Errorf("upstream ws unavailable")
 	}
@@ -421,6 +437,8 @@ func newWSRelayRequest(
 	metricsRequest *transformerModel.InternalLLMRequest,
 	preferredSticky *balancer.SessionEntry,
 	rawBody []byte,
+	clientHeaders http.Header,
+	mapFinal429To503 bool,
 ) (*relayRequest, *dbmodel.Group, error) {
 	group, err := op.GroupGetEnabledMap(requestModel, ctx)
 	if err != nil {
@@ -433,17 +451,19 @@ func newWSRelayRequest(
 	}
 
 	return &relayRequest{
-		c:               nil,
-		ctx:             ctx,
-		inAdapter:       inAdapter,
-		internalRequest: executionRequest,
-		metrics:         NewRelayMetrics(apiKeyID, requestModel, rawBody, metricsRequest),
-		apiKeyID:        apiKeyID,
-		requestModel:    requestModel,
-		groupID:         group.ID,
-		groupSessionTTL: group.SessionKeepTime,
-		iter:            iter,
-		streamWriter:    NewWSStreamWriter(ctx, conn),
+		c:                nil,
+		ctx:              ctx,
+		inAdapter:        inAdapter,
+		internalRequest:  executionRequest,
+		metrics:          NewRelayMetrics(apiKeyID, requestModel, rawBody, metricsRequest),
+		apiKeyID:         apiKeyID,
+		requestModel:     requestModel,
+		groupID:          group.ID,
+		groupSessionTTL:  group.SessionKeepTime,
+		iter:             iter,
+		streamWriter:     NewWSStreamWriter(ctx, conn),
+		clientHeaders:    clientHeaders,
+		mapFinal429To503: mapFinal429To503,
 	}, &group, nil
 }
 
@@ -627,6 +647,15 @@ func runWSRelay(ctx context.Context, req *relayRequest, group *dbmodel.Group) ws
 		lastResult = result
 	}
 
+	if mapFinalCodexStatus(lastResult.StatusCode, req.mapFinal429To503) == http.StatusServiceUnavailable &&
+		lastResult.StatusCode == http.StatusTooManyRequests {
+		publicErr := wsPublicError{
+			Status:  http.StatusServiceUnavailable,
+			Code:    "upstream_rate_limited_retryable",
+			Message: "上游限流，请稍后重试",
+		}
+		return wsRelayResult{Err: lastErr, PublicError: &publicErr}
+	}
 	if publicErr, ok := classifyWSPublicError(lastErr, lastResult.StatusCode); ok {
 		return wsRelayResult{ResetConversation: publicErr.ResetConversation, Err: lastErr, PublicError: &publicErr}
 	}

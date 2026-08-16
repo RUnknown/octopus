@@ -9,9 +9,10 @@ import {
     Activity,
     TrendingUp,
     Globe,
+    ImageIcon,
     Key
 } from 'lucide-react';
-import { useUpdateChannel, useDeleteChannel, type Channel, type UpdateChannelRequest } from '@/api/endpoints/channel';
+import { ChannelType, useUpdateChannel, useDeleteChannel, type Channel, type UpdateChannelRequest } from '@/api/endpoints/channel';
 import {
     MorphingDialogTitle,
     MorphingDialogDescription,
@@ -28,6 +29,7 @@ import { formatMoney } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useJumpStore } from '@/stores/jump';
+import { ImageTestPanel } from './ImageTestPanel';
 
 export function CardContent({ channel, stats }: { channel: Channel; stats: StatsMetricsFormatted }) {
     const { setIsOpen } = useMorphingDialog();
@@ -36,6 +38,7 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
     const requestJump = useJumpStore((state) => state.requestJump);
     const [isEditing, setIsEditing] = useState(false);
     const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+    const [showImageTest, setShowImageTest] = useState(false);
     const [formData, setFormData] = useState<ChannelFormData>({
         name: channel.name,
         type: channel.type,
@@ -68,6 +71,7 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
     const tProxy = useTranslations('proxyPool');
 
     const currentView = isEditing ? 'editing' : 'viewing';
+    const supportsImageTest = channel.type === ChannelType.OpenAIChat || channel.type === ChannelType.OpenAIResponse;
 
     const baseUrlsEqual = (a: Channel['base_urls'] | undefined, b: Channel['base_urls'] | undefined) =>
         JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
@@ -482,6 +486,20 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
                                     </dd>
                                 </dl>
                             </div>
+
+                            {showImageTest ? <ImageTestPanel channel={channel} /> : null}
+
+                            {supportsImageTest ? (
+                                <Button
+                                    type="button"
+                                    onClick={() => setShowImageTest((current) => !current)}
+                                    variant="outline"
+                                    className="mt-3 w-full rounded-2xl h-12"
+                                >
+                                    <ImageIcon className="size-4" />
+                                    {showImageTest ? t('imageTest.hide') : t('imageTest.action')}
+                                </Button>
+                            ) : null}
 
                             {/* 操作按钮 */}
                             {!channel.managed ? (

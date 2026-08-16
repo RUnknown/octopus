@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { Hash, HeartPulse, ShieldCheck, Timer, TimerOff, type LucideIcon } from 'lucide-react';
+import { Hash, HeartPulse, RefreshCcw, ShieldCheck, Timer, TimerOff, type LucideIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { SettingKey } from '@/api/endpoints/setting';
@@ -51,12 +51,16 @@ export function SettingReliability() {
     const t = useTranslations('setting');
     const outlier = useSettingToggle(SettingKey.OutlierRetireEnabled);
     const groupHealth = useSettingToggle(SettingKey.GroupHealthEnabled);
+    const codex429 = useSettingToggle(SettingKey.CodexMap429To503);
 
     return (
         <SettingCard icon={ShieldCheck} title={t('reliability.title')}>
             {/* 分组健康检查 */}
             <SettingRow icon={HeartPulse} label={t('groupHealth.label')} tooltip={t('groupHealth.description')}>
                 <Switch checked={groupHealth.enabled} onCheckedChange={groupHealth.toggle} />
+            </SettingRow>
+            <SettingRow icon={RefreshCcw} label={t('codex429.label')} tooltip={t('codex429.description')}>
+                <Switch checked={codex429.enabled} onCheckedChange={codex429.toggle} />
             </SettingRow>
 
             {/* 熔断器 */}

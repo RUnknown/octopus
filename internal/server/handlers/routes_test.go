@@ -15,14 +15,23 @@ func TestRegisterHandlerRoutes(t *testing.T) {
 		t.Fatalf("register handler routes: %v", err)
 	}
 
-	foundRuntimeClear := false
+	expected := map[string]bool{
+		http.MethodDelete + " /api/v1/runtime/clear":      false,
+		http.MethodPost + " /api/v1/channel/test-image":   false,
+		http.MethodPost + " /v1/codex/responses":          false,
+		http.MethodGet + " /v1/codex/responses":           false,
+		http.MethodPost + " /backend-api/codex/responses": false,
+		http.MethodGet + " /backend-api/codex/responses":  false,
+	}
 	for _, route := range engine.Routes() {
-		if route.Method == http.MethodDelete && route.Path == "/api/v1/runtime/clear" {
-			foundRuntimeClear = true
-			break
+		key := route.Method + " " + route.Path
+		if _, ok := expected[key]; ok {
+			expected[key] = true
 		}
 	}
-	if !foundRuntimeClear {
-		t.Fatal("expected DELETE /api/v1/runtime/clear to be registered")
+	for route, found := range expected {
+		if !found {
+			t.Fatalf("expected %s to be registered", route)
+		}
 	}
 }

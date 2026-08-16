@@ -145,18 +145,19 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 
 	// 请求级上下文
 	req := &relayRequest{
-		c:               c,
-		inAdapter:       inAdapter,
-		internalRequest: internalRequest,
-		metrics:         metrics,
-		apiKeyID:        apiKeyID,
-		requestModel:    requestModel,
-		groupID:         group.ID,
-		groupSessionTTL: group.SessionKeepTime,
-		iter:            iter,
-		activeRequestID: activeRequestID,
-		rawBody:         rawBody,
-		heartbeat:       hb,
+		c:                c,
+		inAdapter:        inAdapter,
+		internalRequest:  internalRequest,
+		metrics:          metrics,
+		apiKeyID:         apiKeyID,
+		requestModel:     requestModel,
+		groupID:          group.ID,
+		groupSessionTTL:  group.SessionKeepTime,
+		iter:             iter,
+		activeRequestID:  activeRequestID,
+		rawBody:          rawBody,
+		heartbeat:        hb,
+		mapFinal429To503: shouldMapFinalCodex429(c.Request.Header),
 	}
 
 	var lastErr error
@@ -409,7 +410,8 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		if lastResult.RetryAfter > 0 {
 			c.Header("Retry-After", fmt.Sprintf("%d", int(lastResult.RetryAfter.Seconds())))
 		}
-		hb.FlushOrError(c, lastResult.StatusCode, publicRelayErrorMessage(lastResult.Err))
+		clientStatus := mapFinalCodexStatus(lastResult.StatusCode, req.mapFinal429To503)
+		hb.FlushOrError(c, clientStatus, publicRelayErrorMessage(lastResult.Err))
 		return
 	}
 	if lastResult.StatusCode > 0 {
@@ -791,10 +793,13 @@ func isContinuationTransportFailure(err error) bool {
 }
 
 func (ra *relayAttempt) clientRequestHeaders() http.Header {
-	if ra == nil || ra.c == nil || ra.c.Request == nil {
+	if ra == nil {
 		return nil
 	}
-	return ra.c.Request.Header
+	if ra.c != nil && ra.c.Request != nil {
+		return ra.c.Request.Header
+	}
+	return ra.clientHeaders
 }
 
 func (ra *relayAttempt) handleWSStreamResponseV2(ctx context.Context, reader *wsUpstreamReader) error {

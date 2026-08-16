@@ -219,6 +219,13 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 				return fmt.Errorf("import channels: %w", err)
 			}
+			// Keep legacy backups with no base URL importable. Any URL that is
+			// present must satisfy the same validation as newly edited channels.
+			if len(ch.BaseUrls) > 0 {
+				if err := model.ValidateChannelBaseURLs(ch.BaseUrls); err != nil {
+					return fmt.Errorf("import channel %q: %w", ch.Name, err)
+				}
+			}
 			if err := tx.Omit("Keys", "Stats").Create(&ch).Error; err != nil {
 				return fmt.Errorf("import channels: %w", err)
 			}

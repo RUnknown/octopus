@@ -10,10 +10,12 @@ import (
 	"github.com/bestruirui/octopus/internal/helper"
 	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
+	"github.com/bestruirui/octopus/internal/relay"
 	"github.com/bestruirui/octopus/internal/server/middleware"
 	"github.com/bestruirui/octopus/internal/server/resp"
 	"github.com/bestruirui/octopus/internal/server/router"
 	"github.com/bestruirui/octopus/internal/task"
+	"github.com/bestruirui/octopus/internal/utils/log"
 	"github.com/bestruirui/octopus/internal/utils/safe"
 	"github.com/gin-gonic/gin"
 )
@@ -45,6 +47,10 @@ func init() {
 		AddRoute(
 			router.NewRoute("/fetch-model", http.MethodPost).
 				Handle(fetchModel),
+		).
+		AddRoute(
+			router.NewRoute("/test-image", http.MethodPost).
+				Handle(testChannelImage),
 		)
 	router.NewGroupRouter("/api/v1/channel").
 		Use(middleware.Auth()).
@@ -98,6 +104,10 @@ func createChannel(c *gin.Context) {
 	if channel.ProxyMode == "" {
 		channel.ProxyMode = model.ProxyUsageModeDirect
 	}
+	if err := model.ValidateChannelBaseURLs(channel.BaseUrls); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err := channel.ProxyMode.Validate(false); err != nil {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
@@ -139,6 +149,12 @@ func updateChannel(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		resp.InvalidJSON(c)
 		return
+	}
+	if req.BaseUrls != nil {
+		if err := model.ValidateChannelBaseURLs(*req.BaseUrls); err != nil {
+			resp.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 	channel, err := op.ChannelUpdate(&req, c.Request.Context())
 	if err != nil {
@@ -195,12 +211,47 @@ func fetchModel(c *gin.Context) {
 		resp.InvalidJSON(c)
 		return
 	}
+	if err := model.ValidateChannelBaseURLs(request.BaseUrls); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
 	models, err := helper.FetchModels(c.Request.Context(), request)
 	if err != nil {
 		resp.ErrorWithAppError(c, http.StatusInternalServerError, channelError(codeChannelFetchModelsFailed, "channel fetch models failed", err))
 		return
 	}
 	resp.Success(c, models)
+}
+
+func testChannelImage(c *gin.Context) {
+	var request relay.ImageGenerationTestRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		resp.InvalidJSON(c)
+		return
+	}
+	if err := request.Validate(); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	channel, err := op.ChannelGet(request.ChannelID, c.Request.Context())
+	if err != nil {
+		resp.Error(c, http.StatusNotFound, "channel not found")
+		return
+	}
+
+	result, usedKey, testErr := relay.RunImageGenerationTest(c.Request.Context(), channel, request)
+	if usedKey.ID > 0 && result != nil {
+		usedKey.StatusCode = result.StatusCode
+		usedKey.LastUseTimeStamp = time.Now().Unix()
+		if err := op.ChannelKeyUpdate(usedKey); err != nil {
+			log.Warnf("failed to update image test key status: %v", err)
+		}
+	}
+	if testErr != nil {
+		resp.Error(c, http.StatusBadGateway, testErr.Error())
+		return
+	}
+	resp.Success(c, result)
 }
 
 func syncChannel(c *gin.Context) {
