@@ -50,7 +50,11 @@ const (
 	SettingKeyWebDAVBackupInterval             SettingKey = "webdav_backup_interval"               // WebDAV 自动备份间隔(小时)，0=禁用
 	SettingKeyWebDAVRetentionCount             SettingKey = "webdav_retention_count"               // WebDAV 保留备份份数
 	SettingKeyWebDAVIncludeStats               SettingKey = "webdav_include_stats"                 // WebDAV 备份是否包含统计数据
+	SettingKeyRelayLogMaxContentSizeMB         SettingKey = "relay_log_max_content_size_mb"         // 单条日志请求与响应正文合计上限（MiB），-1 表示不限制
 )
+
+// DefaultRelayLogMaxContentSizeMB 默认单条日志正文上限（MiB）
+const DefaultRelayLogMaxContentSizeMB = 2
 
 type Setting struct {
 	Key   SettingKey `json:"key" gorm:"primaryKey"`
@@ -100,6 +104,7 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyWebDAVBackupInterval, Value: "0"},            // 默认禁用自动备份
 		{Key: SettingKeyWebDAVRetentionCount, Value: "10"},           // 默认保留10份
 		{Key: SettingKeyWebDAVIncludeStats, Value: "true"},           // 默认包含统计数据
+		{Key: SettingKeyRelayLogMaxContentSizeMB, Value: "2"},        // 默认单条日志正文上限2MiB
 	}
 }
 
@@ -132,6 +137,15 @@ func (s *Setting) Validate() error {
 		}
 		if value < 0 {
 			return fmt.Errorf("setting value must be non-negative")
+		}
+		return nil
+	case SettingKeyRelayLogMaxContentSizeMB:
+		value, err := strconv.Atoi(s.Value)
+		if err != nil {
+			return fmt.Errorf("relay log max content size must be an integer")
+		}
+		if value < -1 {
+			return fmt.Errorf("relay log max content size must be -1 or greater")
 		}
 		return nil
 	case SettingKeyRelayLogKeepEnabled, SettingKeyResponsesWSEnabled, SettingKeyGroupHealthEnabled, SettingKeyStatsSiteModelBackfilled, SettingKeyOutlierRetireEnabled, SettingKeyWebDAVIncludeStats, SettingKeyAutoGroupCreateMissingEnabled, SettingKeyAutoGroupNormalizeEnabled:

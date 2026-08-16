@@ -31,6 +31,30 @@ func capAttemptsForLog(attempts []model.ChannelAttempt) ([]model.ChannelAttempt,
 	return attempts, total
 }
 
+// capRelayLogContent 将单条日志的请求/响应正文按合计上限截断。
+// maxContentSizeMB < 0 表示不限制；超限时优先截断响应正文（保留请求可审计内容）。
+func capRelayLogContent(reqContent, respContent string, maxContentSizeMB int) (string, string) {
+	if maxContentSizeMB < 0 {
+		return reqContent, respContent
+	}
+	const bytesPerMiB int64 = 1024 * 1024
+	maxSize := int64(maxContentSizeMB) * bytesPerMiB
+	total := int64(len(reqContent)) + int64(len(respContent))
+	if total <= maxSize {
+		return reqContent, respContent
+	}
+	log.Warnf("relay log content size=%d bytes exceeds limit=%d MiB, truncating", total, maxContentSizeMB)
+	// 优先截断响应正文
+	if respBudget := maxSize - int64(len(reqContent)); respBudget > 0 {
+		respContent = respContent[:respBudget]
+	} else {
+		// 响应预算为负，说明请求已超限：按比例截断请求，响应留空
+		reqContent = reqContent[:maxSize]
+		respContent = ""
+	}
+	return reqContent, respContent
+}
+
 // RelayMetrics 负责最终的日志收集与持久化
 type RelayMetrics struct {
 	APIKeyID     int
@@ -323,6 +347,14 @@ func (m *RelayMetrics) saveLog(ctx context.Context, success bool, err error, dur
 			relayLog.ResponseContent = string(respJSON)
 		}
 	}
+
+	// 单条日志正文上限：防止超大请求/响应正文撑爆数据库或拖垮日志队列
+	maxContentSizeMB, settingErr := op.SettingGetInt(model.SettingKeyRelayLogMaxContentSizeMB)
+	if settingErr != nil || maxContentSizeMB < -1 {
+		maxContentSizeMB = model.DefaultRelayLogMaxContentSizeMB
+	}
+	relayLog.RequestContent, relayLog.ResponseContent = capRelayLogContent(
+		relayLog.RequestContent, relayLog.ResponseContent, maxContentSizeMB)
 
 	// 错误信息
 	if err != nil {
