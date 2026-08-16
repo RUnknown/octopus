@@ -483,6 +483,12 @@ func shouldProxyUpstreamWSHeader(name string) bool {
 	if hopByHopHeaders[lowerName] {
 		return false
 	}
+	// Never leak browser session context from a downstream WebSocket handshake
+	// to an upstream model provider. Channel custom headers can still set an
+	// explicit provider-required value after this filtering step.
+	if lowerName == "cookie" || lowerName == "origin" {
+		return false
+	}
 	if strings.HasPrefix(lowerName, "sec-websocket-") {
 		return false
 	}

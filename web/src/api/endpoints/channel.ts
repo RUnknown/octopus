@@ -147,6 +147,35 @@ export type FetchModelRequest = {
     custom_header?: CustomHeader[];
 };
 
+export type ImageGenerationTestRequest = {
+    channel_id: number;
+    key_id?: number;
+    model: string;
+    prompt: string;
+    size?: string;
+    quality?: string;
+    background?: string;
+    output_format?: string;
+};
+
+export type ImageGenerationTestImage = {
+    url?: string;
+    b64_json?: string;
+    revised_prompt?: string;
+};
+
+export type ImageGenerationTestResult = {
+    status_code: number;
+    duration_ms: number;
+    content_type?: string;
+    key_id: number;
+    body: {
+        created?: number;
+        data?: ImageGenerationTestImage[];
+        usage?: Record<string, number>;
+    };
+};
+
 /**
  * 获取渠道列表 Hook
  * 
@@ -350,6 +379,17 @@ export function useFetchModel() {
         },
         onError: (error) => {
             logger.error('模型列表获取失败:', error);
+        },
+    });
+}
+
+export function useTestImageChannel() {
+    return useMutation({
+        mutationFn: async (data: ImageGenerationTestRequest) => {
+            return apiClient.post<ImageGenerationTestResult>('/api/v1/channel/test-image', data);
+        },
+        onError: (error) => {
+            logger.error('图片生成测试失败:', error);
         },
     });
 }

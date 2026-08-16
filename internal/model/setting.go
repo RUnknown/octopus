@@ -30,6 +30,7 @@ const (
 	SettingKeyAutoGroupCreateMissingEnabled    SettingKey = "auto_group_create_missing_enabled"    // 精确匹配时是否为缺失模型自动创建对外分组
 	SettingKeyAutoGroupNormalizeEnabled        SettingKey = "auto_group_normalize_enabled"         // 精确匹配时是否归一化模型名
 	SettingKeyRelayRequestTimeout              SettingKey = "relay_request_timeout"                // 非流式上游请求总超时（秒），0 使用安全默认值
+	SettingKeyCodexMap429To503                 SettingKey = "codex_map_429_to_503"                 // 官方 Codex 客户端最终 429 映射为 503，触发客户端重试
 	SettingKeyJWTSecret                        SettingKey = "jwt_secret"                           // JWT 签名密钥（自动生成）
 	SettingKeyStatsSiteModelBackfilled         SettingKey = "stats_site_model_backfilled"          // 站点渠道小时聚合是否已回填历史日志
 	SettingKeyOutlierRetireEnabled             SettingKey = "outlier_retire_enabled"               // 被动离群退役(POR)总开关
@@ -80,6 +81,7 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyAutoGroupCreateMissingEnabled, Value: "false"}, // 默认不创建缺失对外分组
 		{Key: SettingKeyAutoGroupNormalizeEnabled, Value: "false"},     // 默认保留上游原始模型名
 		{Key: SettingKeyRelayRequestTimeout, Value: "300"},             // 默认 5 分钟，避免上游永久挂起
+		{Key: SettingKeyCodexMap429To503, Value: "false"},              // 默认保留真实 429，仅按需改善 Codex 客户端重试
 		{Key: SettingKeyJWTSecret, Value: ""},                          // 为空时自动生成
 		{Key: SettingKeyStatsSiteModelBackfilled, Value: "false"},
 		{Key: SettingKeyOutlierRetireEnabled, Value: "false"},        // 默认关闭被动离群退役，保守上线
@@ -134,7 +136,7 @@ func (s *Setting) Validate() error {
 			return fmt.Errorf("setting value must be non-negative")
 		}
 		return nil
-	case SettingKeyRelayLogKeepEnabled, SettingKeyResponsesWSEnabled, SettingKeyGroupHealthEnabled, SettingKeyStatsSiteModelBackfilled, SettingKeyOutlierRetireEnabled, SettingKeyWebDAVIncludeStats, SettingKeyAutoGroupCreateMissingEnabled, SettingKeyAutoGroupNormalizeEnabled:
+	case SettingKeyRelayLogKeepEnabled, SettingKeyResponsesWSEnabled, SettingKeyGroupHealthEnabled, SettingKeyStatsSiteModelBackfilled, SettingKeyOutlierRetireEnabled, SettingKeyWebDAVIncludeStats, SettingKeyAutoGroupCreateMissingEnabled, SettingKeyAutoGroupNormalizeEnabled, SettingKeyCodexMap429To503:
 		if s.Value != "true" && s.Value != "false" {
 			return fmt.Errorf("setting value must be true or false")
 		}

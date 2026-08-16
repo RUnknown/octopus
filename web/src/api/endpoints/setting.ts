@@ -28,6 +28,7 @@ export const SettingKey = {
     ResponsesWSDefaultMode: 'responses_ws_default_mode',
     SSEHeartbeatInterval: 'sse_heartbeat_interval',
     SSEPreStreamHeartbeatDelay: 'sse_pre_stream_heartbeat_delay',
+    CodexMap429To503: 'codex_map_429_to_503',
     GroupHealthEnabled: 'group_health_enabled',
     ProjectedChannelAutoGroupEnabled: 'projected_channel_auto_group_enabled',
     OutlierRetireEnabled: 'outlier_retire_enabled',
@@ -305,5 +306,4 @@ export function useRestoreWebDAVBackup() {
         },
     });
 }
-
 

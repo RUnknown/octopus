@@ -23,6 +23,10 @@ func init() {
 				Handle(response),
 		).
 		AddRoute(
+			router.NewRoute("/codex/responses", http.MethodPost).
+				Handle(response),
+		).
+		AddRoute(
 			router.NewRoute("/responses/compact", http.MethodPost).
 				Handle(responseCompact),
 		).
@@ -37,6 +41,27 @@ func init() {
 
 	// WebSocket route for /v1/responses (no RequireJSON middleware)
 	router.NewGroupRouter("/v1").
+		Use(middleware.APIKeyAuth()).
+		AddRoute(
+			router.NewRoute("/responses", http.MethodGet).
+				Handle(wsResponse),
+		).
+		AddRoute(
+			router.NewRoute("/codex/responses", http.MethodGet).
+				Handle(wsResponse),
+		)
+
+	// Compatibility alias used by clients that point chatgpt_base_url at a
+	// ChatGPT-style backend. Both ingress paths still normalize to the regular
+	// OpenAI Responses transformer and /v1/responses upstream path.
+	router.NewGroupRouter("/backend-api/codex").
+		Use(middleware.APIKeyAuth()).
+		Use(middleware.RequireJSON()).
+		AddRoute(
+			router.NewRoute("/responses", http.MethodPost).
+				Handle(response),
+		)
+	router.NewGroupRouter("/backend-api/codex").
 		Use(middleware.APIKeyAuth()).
 		AddRoute(
 			router.NewRoute("/responses", http.MethodGet).

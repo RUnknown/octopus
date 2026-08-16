@@ -49,6 +49,9 @@ func ChannelCreate(channel *model.Channel, ctx context.Context) error {
 	if channel == nil {
 		return fmt.Errorf("channel is nil")
 	}
+	if err := model.ValidateChannelBaseURLs(channel.BaseUrls); err != nil {
+		return err
+	}
 	if channel.ProxyMode == "" {
 		channel.ProxyMode = model.ProxyUsageModeDirect
 	}
@@ -203,6 +206,10 @@ func ChannelUpdate(req *model.ChannelUpdateRequest, ctx context.Context) (*model
 		updates.Enabled = *req.Enabled
 	}
 	if req.BaseUrls != nil {
+		if err := model.ValidateChannelBaseURLs(*req.BaseUrls); err != nil {
+			tx.Rollback()
+			return nil, err
+		}
 		selectFields = append(selectFields, "base_urls")
 		updates.BaseUrls = *req.BaseUrls
 	}

@@ -227,6 +227,10 @@
             "label": "分组健康检查",
             "description": "启用后显示首页分组健康摘要、分组卡片健康状态，并允许手动运行健康检查。"
         },
+        "codex429": {
+            "label": "Codex 限流自动重试",
+            "description": "仅对官方 Codex 客户端生效：所有候选均因 429 失败时返回 503，让客户端按服务端错误策略重试；日志仍记录真实 429。"
+        },
         "circuitBreaker": {
             "title": "熔断器配置",
             "threshold": {
@@ -918,6 +922,30 @@
                 "inputCost": "输入成本",
                 "outputCost": "输出成本",
                 "avgWaitTime": "等待时间"
+            },
+            "imageTest": {
+                "action": "测试图片生成",
+                "hide": "收起图片测试",
+                "title": "图片生成测试",
+                "description": "直接使用该渠道和指定密钥调用 /images/generations，不计入业务请求统计。",
+                "model": "模型",
+                "modelPlaceholder": "选择模型",
+                "key": "密钥",
+                "keyPlaceholder": "选择密钥",
+                "prompt": "提示词",
+                "promptPlaceholder": "描述要生成的图片，内容会保存在当前浏览器",
+                "size": "尺寸",
+                "quality": "质量",
+                "background": "背景",
+                "outputFormat": "输出格式",
+                "generate": "开始生成",
+                "generating": "生成中...",
+                "status": "状态码 {status}",
+                "duration": "耗时 {duration} ms",
+                "usedKey": "Key #{key}",
+                "imageAlt": "生成图片 {index}",
+                "missingImage": "响应中没有可显示的图片",
+                "noImages": "请求成功，但响应中没有图片数据。"
             },
             "actions": {
                 "edit": "编辑",

@@ -126,6 +126,40 @@ func TestPairToolCallsLeavesAnsweredCallsUntouched(t *testing.T) {
 	}
 }
 
+func TestDeduplicateToolResultsKeepsLastContentAtFirstPosition(t *testing.T) {
+	callID := "call_a"
+	first := "stale"
+	last := "corrected"
+	messages := []model.Message{
+		{Role: "assistant", ToolCalls: []model.ToolCall{{ID: callID, Function: model.FunctionCall{Name: "lookup"}}}},
+		{Role: "tool", ToolCallID: &callID, Content: model.MessageContent{Content: &first}},
+		{Role: "user", Content: model.MessageContent{Content: stringPtr("continue")}},
+		{Role: "tool", ToolCallID: &callID, Content: model.MessageContent{Content: &last}},
+	}
+
+	got := DeduplicateToolResults(messages)
+	if len(got) != 3 {
+		t.Fatalf("message count = %d, want 3: %+v", len(got), got)
+	}
+	if got[1].Role != "tool" || got[1].Content.Content == nil || *got[1].Content.Content != last {
+		t.Fatalf("deduplicated tool result = %+v, want last content", got[1])
+	}
+	if got[2].Role != "user" {
+		t.Fatalf("non-tool message order changed: %+v", got)
+	}
+}
+
+func TestDeduplicateToolResultsPreservesEmptyIDs(t *testing.T) {
+	empty := ""
+	messages := []model.Message{
+		{Role: "tool", ToolCallID: &empty},
+		{Role: "tool", ToolCallID: &empty},
+	}
+	if got := DeduplicateToolResults(messages); len(got) != len(messages) {
+		t.Fatalf("empty tool IDs were deduplicated: %+v", got)
+	}
+}
+
 // PatchAnthropicRequest is kept as the Anthropic entrypoint but must stay
 // equivalent to the shared repair so behaviour cannot drift per protocol.
 func TestPatchAnthropicRequestMatchesPairToolCalls(t *testing.T) {

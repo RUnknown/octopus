@@ -119,7 +119,7 @@ func (i *ResponseInbound) TransformResponse(ctx context.Context, response *model
 func (i *ResponseInbound) TransformStream(ctx context.Context, stream *model.InternalLLMResponse) ([]byte, error) {
 	// Handle [DONE] marker
 	if stream.Object == "[DONE]" {
-		return []byte("data: [DONE]\n\n"), nil
+		return i.processStreamEvents(ctx, model.StreamEventsFromInternalResponse(stream), false)
 	}
 
 	// Preserve the original chunk for aggregation; the stream-event view is a
@@ -226,8 +226,13 @@ func (i *ResponseInbound) processStreamEvents(ctx context.Context, events []mode
 			if !i.hasFinished {
 				i.hasFinished = true
 				i.finalFinishReason = event.StopReason.String()
+				_, terminalStatus := responsesTerminalEvent(i.finalFinishReason)
+				itemStatus := "completed"
+				if terminalStatus == "incomplete" {
+					itemStatus = "incomplete"
+				}
 				out = append(out, i.closeCurrentContentPart()...)
-				out = append(out, i.closeCurrentOutputItem()...)
+				out = append(out, i.closeCurrentOutputItemWithStatus(itemStatus)...)
 			}
 
 		case model.StreamEventKindUsageDelta:
@@ -235,7 +240,7 @@ func (i *ResponseInbound) processStreamEvents(ctx context.Context, events []mode
 				i.responseCompleted = true
 				i.usage = event.Usage
 				eventType, status := responsesTerminalEvent(i.finalFinishReason)
-				output := i.finalOutputItems()
+				output := i.finalOutputItems(responsesOutputItemStatus(status))
 				if event.ProviderExtensions != nil && event.ProviderExtensions.OpenAI != nil && len(event.ProviderExtensions.OpenAI.RawResponseItems) > 0 {
 					var items []ResponsesItem
 					if err := json.Unmarshal(event.ProviderExtensions.OpenAI.RawResponseItems, &items); err == nil {
@@ -243,22 +248,37 @@ func (i *ResponseInbound) processStreamEvents(ctx context.Context, events []mode
 					}
 				}
 				response := &ResponsesResponse{
-					Object:     "response",
-					ID:         i.responseID,
-					Model:      i.model,
-					CreatedAt:  i.createdAt,
-					Status:     &status,
-					Truncation: i.truncation,
-					Output:     output,
-					Usage:      convertUsageToResponses(i.usage),
+					Object:            "response",
+					ID:                i.responseID,
+					Model:             i.model,
+					CreatedAt:         i.createdAt,
+					Status:            &status,
+					Truncation:        i.truncation,
+					Output:            output,
+					Usage:             convertUsageToResponses(i.usage),
+					IncompleteDetails: responsesIncompleteDetails(i.finalFinishReason),
 				}
 				out = append(out, i.enqueueEvent(&ResponsesStreamEvent{Type: eventType, Response: response}))
 			}
 
 		case model.StreamEventKindDone:
-			if len(out) == 0 {
-				return []byte("data: [DONE]\n\n"), nil
+			if i.hasFinished && !i.responseCompleted {
+				i.responseCompleted = true
+				eventType, status := responsesTerminalEvent(i.finalFinishReason)
+				response := &ResponsesResponse{
+					Object:            "response",
+					ID:                i.responseID,
+					Model:             i.model,
+					CreatedAt:         i.createdAt,
+					Status:            &status,
+					Truncation:        i.truncation,
+					Output:            i.finalOutputItems(responsesOutputItemStatus(status)),
+					Usage:             convertUsageToResponses(i.usage),
+					IncompleteDetails: responsesIncompleteDetails(i.finalFinishReason),
+				}
+				out = append(out, i.enqueueEvent(&ResponsesStreamEvent{Type: eventType, Response: response}))
 			}
+			out = append(out, []byte("data: [DONE]\n\n"))
 
 		case model.StreamEventKindError:
 			if event.Error == nil {
@@ -574,6 +594,10 @@ func (i *ResponseInbound) handleToolCalls(toolCalls []model.ToolCall) [][]byte {
 }
 
 func (i *ResponseInbound) closeReasoningItem() [][]byte {
+	return i.closeReasoningItemWithStatus("completed")
+}
+
+func (i *ResponseInbound) closeReasoningItemWithStatus(status string) [][]byte {
 	if !i.hasReasoningItemStarted {
 		return nil
 	}
@@ -606,8 +630,9 @@ func (i *ResponseInbound) closeReasoningItem() [][]byte {
 	// signatures are JSON-encoded into an array string so per-block provenance is not
 	// lost; downstream consumers that only read the scalar still see non-empty content.
 	item := ResponsesItem{
-		ID:   i.currentItemID,
-		Type: "reasoning",
+		ID:     i.currentItemID,
+		Type:   "reasoning",
+		Status: lo.ToPtr(status),
 		Summary: []ResponsesReasoningSummary{{
 			Type: "summary_text",
 			Text: fullReasoning,
@@ -642,6 +667,10 @@ func (i *ResponseInbound) closeReasoningItem() [][]byte {
 }
 
 func (i *ResponseInbound) closeMessageItem() [][]byte {
+	return i.closeMessageItemWithStatus("completed")
+}
+
+func (i *ResponseInbound) closeMessageItemWithStatus(status string) [][]byte {
 	if !i.hasMessageItemStarted {
 		return nil
 	}
@@ -692,7 +721,7 @@ func (i *ResponseInbound) closeMessageItem() [][]byte {
 	item := ResponsesItem{
 		ID:      i.currentItemID,
 		Type:    "message",
-		Status:  lo.ToPtr("completed"),
+		Status:  lo.ToPtr(status),
 		Role:    "assistant",
 		Content: &ResponsesInput{Items: contentItems},
 	}
@@ -777,16 +806,20 @@ func (i *ResponseInbound) closeCurrentContentPart() [][]byte {
 }
 
 func (i *ResponseInbound) closeCurrentOutputItem() [][]byte {
+	return i.closeCurrentOutputItemWithStatus("completed")
+}
+
+func (i *ResponseInbound) closeCurrentOutputItemWithStatus(status string) [][]byte {
 	var events [][]byte
 
 	// Close message item if open
 	if i.hasMessageItemStarted {
-		events = append(events, i.closeMessageItem()...)
+		events = append(events, i.closeMessageItemWithStatus(status)...)
 	}
 
 	// Close reasoning item if open
 	if i.hasReasoningItemStarted {
-		events = append(events, i.closeReasoningItem()...)
+		events = append(events, i.closeReasoningItemWithStatus(status)...)
 	}
 
 	// Close any open tool call items
@@ -810,7 +843,7 @@ func (i *ResponseInbound) closeCurrentOutputItem() [][]byte {
 			item := ResponsesItem{
 				ID:        itemID,
 				Type:      "function_call",
-				Status:    lo.ToPtr("completed"),
+				Status:    lo.ToPtr(status),
 				CallID:    tc.ID,
 				Name:      tc.Function.Name,
 				Arguments: FlexibleJSONString(tc.Function.Arguments),
@@ -833,7 +866,7 @@ func (i *ResponseInbound) closeCurrentOutputItem() [][]byte {
 // finalOutputItems returns the accumulated output items for response.completed,
 // synthesizing an empty message shell when nothing was emitted. The Responses
 // spec requires a non-empty output on terminal events.
-func (i *ResponseInbound) finalOutputItems() []ResponsesItem {
+func (i *ResponseInbound) finalOutputItems(status string) []ResponsesItem {
 	if len(i.completedOutputItems) > 0 {
 		out := make([]ResponsesItem, len(i.completedOutputItems))
 		copy(out, i.completedOutputItems)
@@ -850,7 +883,7 @@ func (i *ResponseInbound) finalOutputItems() []ResponsesItem {
 					{Type: "output_text", Text: &emptyText, Annotations: &[]ResponsesAnnotation{}},
 				},
 			},
-			Status: lo.ToPtr("completed"),
+			Status: lo.ToPtr(status),
 		},
 	}
 }
@@ -1173,15 +1206,20 @@ type ResponsesReasoning struct {
 // Response types
 
 type ResponsesResponse struct {
-	Object     string          `json:"object"`
-	ID         string          `json:"id"`
-	Model      string          `json:"model"`
-	CreatedAt  int64           `json:"created_at"`
-	Output     []ResponsesItem `json:"output"`
-	Status     *string         `json:"status,omitempty"`
-	Truncation *string         `json:"truncation,omitempty"`
-	Usage      *ResponsesUsage `json:"usage,omitempty"`
-	Error      *ResponsesError `json:"error,omitempty"`
+	Object            string                      `json:"object"`
+	ID                string                      `json:"id"`
+	Model             string                      `json:"model"`
+	CreatedAt         int64                       `json:"created_at"`
+	Output            []ResponsesItem             `json:"output"`
+	Status            *string                     `json:"status,omitempty"`
+	Truncation        *string                     `json:"truncation,omitempty"`
+	IncompleteDetails *ResponsesIncompleteDetails `json:"incomplete_details,omitempty"`
+	Usage             *ResponsesUsage             `json:"usage,omitempty"`
+	Error             *ResponsesError             `json:"error,omitempty"`
+}
+
+type ResponsesIncompleteDetails struct {
+	Reason string `json:"reason"`
 }
 
 type ResponsesUsage struct {
@@ -1752,6 +1790,16 @@ func convertToResponsesAPIResponse(resp *model.InternalLLMResponse) *ResponsesRe
 
 	// Convert choices to output items
 	for _, choice := range resp.Choices {
+		itemStatus := "completed"
+		if choice.FinishReason != nil {
+			_, status := responsesTerminalEvent(*choice.FinishReason)
+			result.Status = lo.ToPtr(status)
+			result.IncompleteDetails = responsesIncompleteDetails(*choice.FinishReason)
+			if status == "incomplete" {
+				itemStatus = "incomplete"
+			}
+		}
+
 		var message *model.Message
 		if choice.Message != nil {
 			message = choice.Message
@@ -1768,7 +1816,7 @@ func convertToResponsesAPIResponse(resp *model.InternalLLMResponse) *ResponsesRe
 			result.Output = append(result.Output, ResponsesItem{
 				ID:     generateItemID(),
 				Type:   "reasoning",
-				Status: lo.ToPtr("completed"),
+				Status: lo.ToPtr(itemStatus),
 				Summary: []ResponsesReasoningSummary{
 					{
 						Type: "summary_text",
@@ -1787,7 +1835,7 @@ func convertToResponsesAPIResponse(resp *model.InternalLLMResponse) *ResponsesRe
 					CallID:    toolCall.ID,
 					Name:      toolCall.Function.Name,
 					Arguments: FlexibleJSONString(toolCall.Function.Arguments),
-					Status:    lo.ToPtr("completed"),
+					Status:    lo.ToPtr(itemStatus),
 				})
 			}
 		}
@@ -1821,7 +1869,7 @@ func convertToResponsesAPIResponse(resp *model.InternalLLMResponse) *ResponsesRe
 							Type:   "image_generation_call",
 							Role:   "assistant",
 							Result: lo.ToPtr(xurl.ExtractBase64FromDataURL(part.ImageURL.URL)),
-							Status: lo.ToPtr("completed"),
+							Status: lo.ToPtr(itemStatus),
 						})
 					}
 				}
@@ -1842,14 +1890,8 @@ func convertToResponsesAPIResponse(resp *model.InternalLLMResponse) *ResponsesRe
 				Type:    "message",
 				Role:    "assistant",
 				Content: &ResponsesInput{Items: contentItems},
-				Status:  lo.ToPtr("completed"),
+				Status:  lo.ToPtr(itemStatus),
 			})
-		}
-
-		// Set status based on finish reason
-		if choice.FinishReason != nil {
-			_, status := responsesTerminalEvent(*choice.FinishReason)
-			result.Status = lo.ToPtr(status)
 		}
 	}
 
@@ -1869,7 +1911,7 @@ func convertToResponsesAPIResponse(resp *model.InternalLLMResponse) *ResponsesRe
 						},
 					},
 				},
-				Status: lo.ToPtr("completed"),
+				Status: lo.ToPtr(responsesOutputItemStatus(lo.FromPtrOr(result.Status, "completed"))),
 			},
 		}
 	}
@@ -1955,7 +1997,7 @@ func responsesTerminalEvent(finishReason string) (eventType string, status strin
 	switch {
 	case r.IsZero():
 		return "response.completed", "completed"
-	case r == model.FinishReasonLength || r == model.FinishReasonPauseTurn:
+	case r == model.FinishReasonLength || r == model.FinishReasonPauseTurn || r == model.FinishReasonContentFilter:
 		return "response.incomplete", "incomplete"
 	case r == model.FinishReasonError || r == model.FinishReasonMalformedCall:
 		return "response.failed", "failed"
@@ -1964,4 +2006,22 @@ func responsesTerminalEvent(finishReason string) (eventType string, status strin
 	default:
 		return "response.completed", "completed"
 	}
+}
+
+func responsesIncompleteDetails(finishReason string) *ResponsesIncompleteDetails {
+	switch model.ParseFinishReason(finishReason) {
+	case model.FinishReasonLength:
+		return &ResponsesIncompleteDetails{Reason: "max_output_tokens"}
+	case model.FinishReasonContentFilter:
+		return &ResponsesIncompleteDetails{Reason: "content_filter"}
+	default:
+		return nil
+	}
+}
+
+func responsesOutputItemStatus(responseStatus string) string {
+	if responseStatus == "incomplete" {
+		return "incomplete"
+	}
+	return "completed"
 }

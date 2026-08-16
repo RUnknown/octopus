@@ -227,6 +227,10 @@
             "label": "Group Health Checks",
             "description": "When enabled, show the home health summary, group-card health status, and allow manual health checks."
         },
+        "codex429": {
+            "label": "Codex rate-limit retry",
+            "description": "Official Codex clients only: return 503 when every candidate ends in 429 so the client retries it as a server failure. Logs still retain the real 429."
+        },
         "circuitBreaker": {
             "title": "Circuit Breaker",
             "threshold": {
@@ -918,6 +922,30 @@
                 "inputCost": "Input Cost",
                 "outputCost": "Output Cost",
                 "avgWaitTime": "Wait Time"
+            },
+            "imageTest": {
+                "action": "Test image generation",
+                "hide": "Hide image test",
+                "title": "Image generation test",
+                "description": "Call /images/generations directly with this channel and key. Test calls are excluded from business request statistics.",
+                "model": "Model",
+                "modelPlaceholder": "Select a model",
+                "key": "Key",
+                "keyPlaceholder": "Select a key",
+                "prompt": "Prompt",
+                "promptPlaceholder": "Describe the image to generate. The prompt is saved in this browser.",
+                "size": "Size",
+                "quality": "Quality",
+                "background": "Background",
+                "outputFormat": "Output format",
+                "generate": "Generate",
+                "generating": "Generating...",
+                "status": "Status {status}",
+                "duration": "Duration {duration} ms",
+                "usedKey": "Key #{key}",
+                "imageAlt": "Generated image {index}",
+                "missingImage": "No displayable image was returned",
+                "noImages": "The request succeeded but returned no image data."
             },
             "actions": {
                 "edit": "Edit",

@@ -77,7 +77,7 @@ func TestBestEffortWarmupUpstreamWSPrimesPoolAndSticky(t *testing.T) {
 		"generate": json.RawMessage(`false`),
 	}
 
-	if err := bestEffortWarmupUpstreamWS(context.Background(), 321, "", "", reqBody); err != nil {
+	if err := bestEffortWarmupUpstreamWS(context.Background(), 321, "", "", reqBody, nil); err != nil {
 		t.Fatalf("bestEffortWarmupUpstreamWS failed: %v", err)
 	}
 	waitForWarmupAccepted(t, acceptedCh)
