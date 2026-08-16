@@ -193,6 +193,11 @@
             "label": "Proxy URL",
             "placeholder": "Enter proxy URL"
         },
+        "modelPriceUrl": {
+            "label": "Model Price Proxy URL",
+            "placeholder": "https://example.com/api.json",
+            "description": "Full mirror or reverse-proxy endpoint used to fetch model prices; leave empty to use https://models.dev/api.json"
+        },
         "apiBaseUrl": {
             "label": "API Base URL",
             "placeholder": "https://octopus.example.com",

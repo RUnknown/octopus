@@ -193,6 +193,11 @@
             "label": "代理位址",
             "placeholder": "請輸入代理位址"
         },
+        "modelPriceUrl": {
+            "label": "模型價格代理位址",
+            "placeholder": "https://example.com/api.json",
+            "description": "用於取得模型價格的完整鏡像或反向代理介面位址；留空時存取 https://models.dev/api.json"
+        },
         "apiBaseUrl": {
             "label": "API 位址",
             "placeholder": "https://octopus.example.com",

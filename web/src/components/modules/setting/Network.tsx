@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Activity, Globe, Link, Network, Radio, Shield, X } from 'lucide-react';
+import { Activity, CircleDollarSign, Globe, Link, Network, Radio, Shield, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -83,6 +83,7 @@ export function SettingNetwork() {
     const t = useTranslations('setting');
 
     const proxyUrl = useSettingField(SettingKey.ProxyURL);
+    const modelPriceUrl = useSettingField(SettingKey.ModelPriceURL);
     const apiBaseUrl = useSettingField(SettingKey.ApiBaseUrl);
     const cors = useSettingField(SettingKey.CORSAllowOrigins);
     const sseHeartbeat = useSettingField(SettingKey.SSEHeartbeatInterval, SSE_MIRROR_KEYS);
@@ -142,6 +143,21 @@ export function SettingNetwork() {
                     onChange={(e) => proxyUrl.setValue(e.target.value)}
                     onBlur={proxyUrl.save}
                     placeholder={t('proxyUrl.placeholder')}
+                    className="w-48 rounded-xl"
+                />
+            </SettingRow>
+
+            {/* 模型价格接口镜像/反代地址 */}
+            <SettingRow
+                icon={CircleDollarSign}
+                label={t('modelPriceUrl.label')}
+                tooltip={t('modelPriceUrl.description')}
+            >
+                <Input
+                    value={modelPriceUrl.value}
+                    onChange={(e) => modelPriceUrl.setValue(e.target.value)}
+                    onBlur={modelPriceUrl.save}
+                    placeholder={t('modelPriceUrl.placeholder')}
                     className="w-48 rounded-xl"
                 />
             </SettingRow>

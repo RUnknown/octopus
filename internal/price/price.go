@@ -16,7 +16,7 @@ import (
 	"github.com/bestruirui/octopus/internal/utils/log"
 )
 
-const llmPriceUrl = "https://models.dev/api.json"
+const defaultLLMPriceURL = "https://models.dev/api.json"
 
 var Provider = []string{
 	"openai",     // GPT 系列
@@ -44,7 +44,7 @@ func UpdateLLMPrice(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, llmPriceUrl, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, configuredLLMPriceURL(), nil)
 	if err != nil {
 		return err
 	}
@@ -82,6 +82,22 @@ func UpdateLLMPrice(ctx context.Context) error {
 	lastUpdateTime = time.Now()
 	lastUpdateTimeLock.Unlock()
 	return nil
+}
+
+func configuredLLMPriceURL() string {
+	value, err := op.SettingGetString(model.SettingKeyModelPriceURL)
+	if err != nil {
+		return defaultLLMPriceURL
+	}
+	return selectLLMPriceURL(value)
+}
+
+func selectLLMPriceURL(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return defaultLLMPriceURL
+	}
+	return value
 }
 
 func GetLastUpdateTime() time.Time {
