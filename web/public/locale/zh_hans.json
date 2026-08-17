@@ -952,6 +952,26 @@
                 "missingImage": "响应中没有可显示的图片",
                 "noImages": "请求成功，但响应中没有图片数据。"
             },
+            "sub2apiBalance": {
+                "action": "查询 Sub2API 余额",
+                "hide": "收起余额查询",
+                "title": "Sub2API 余额查询",
+                "description": "由服务端使用所选渠道密钥请求 /v1/usage，不在查询请求中回传完整密钥，也不计入业务请求统计。",
+                "key": "密钥",
+                "keyPlaceholder": "选择密钥",
+                "query": "查询余额",
+                "querying": "查询中...",
+                "remaining": "剩余额度",
+                "plan": "套餐",
+                "mode": "模式",
+                "limit": "总额度",
+                "used": "已使用",
+                "status": "状态码 {status}",
+                "duration": "耗时 {duration} ms",
+                "usedKey": "Key #{key}",
+                "valid": "密钥有效",
+                "invalid": "密钥不可用"
+            },
             "actions": {
                 "edit": "编辑",
                 "cancel": "取消",

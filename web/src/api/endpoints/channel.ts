@@ -176,6 +176,25 @@ export type ImageGenerationTestResult = {
     };
 };
 
+export type Sub2APIBalanceTestRequest = {
+    channel_id: number;
+    key_id?: number;
+};
+
+export type Sub2APIBalanceTestResult = {
+    status_code: number;
+    duration_ms: number;
+    key_id: number;
+    mode?: string;
+    plan_name?: string;
+    remaining: number;
+    balance?: number;
+    limit?: number;
+    used?: number;
+    unit: string;
+    is_valid?: boolean;
+};
+
 /**
  * 获取渠道列表 Hook
  * 
@@ -390,6 +409,21 @@ export function useTestImageChannel() {
         },
         onError: (error) => {
             logger.error('图片生成测试失败:', error);
+        },
+    });
+}
+
+export function useTestSub2APIBalance() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (data: Sub2APIBalanceTestRequest) => {
+            return apiClient.post<Sub2APIBalanceTestResult>('/api/v1/channel/test-sub2api-balance', data);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['channels', 'list'] });
+        },
+        onError: (error) => {
+            logger.error('Sub2API 余额查询失败:', error);
         },
     });
 }
