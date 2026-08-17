@@ -8,6 +8,31 @@ Octopus 是一个面向个人和小团队的自托管 LLM API 网关与管理控
 
 主文档使用中文；[README_zh.md](README_zh.md) 保留为兼容入口。
 
+## 近期阶段性成果（2026-07 ～ 2026-08）
+
+这一阶段的工作重点不是单纯增加页面，而是让 Octopus 在 Codex、长连接中转、多渠道故障切换和日常运维场景中更稳定、更容易定位问题。
+
+| 方向 | 已完成内容 |
+| --- | --- |
+| Codex / OpenAI Responses | 增加 `/v1/codex/responses` 与 `/backend-api/codex/responses` 别名；转发 Session、Thread、Turn-State 身份头并隔离连接池；修正 `length`、`content_filter`、工具调用未完成等终止语义；支持 HTTP replay、WebSocket 续接及异常流恢复 |
+| 智能路由 | 增加 Auto 分组策略，根据渠道和模型的真实成功率、延迟及样本量动态排序；支持最小样本、统计时间窗、窗口容量和延迟权重配置；保留熔断、粘性会话、同渠道重试和跨渠道故障转移 |
+| 渠道诊断 | 渠道详情可直接测试 OpenAI 图片生成；新增 Sub2API `/v1/usage` 余额查询，兼容额度、钱包和旧版余额字段；测试请求使用服务端保存的渠道 Key，不计入业务统计 |
+| 国内网络适配 | 模型价格更新支持自定义 `models.dev` 镜像或反代地址；远程价格不可达时继续使用内置价格表，不影响网关启动和转发 |
+| 协议兼容 | 过滤 Gemini 不支持的 JSON Schema 关键字；跨协议转换前去重重复工具结果；OpenAI Responses 在缺失 usage、终止事件不完整等情况下补齐正确状态 |
+| 数据与日志安全 | 单条 Relay 日志正文默认限制为 2 MiB，并限制 attempts 决策记录，避免超大请求、图片响应或异常重试撑大数据库；日志仍保留路由尝试、状态码和协议诊断信息 |
+| 移动端与运维 | 修复日志卡片、渠道/分组表单和长错误信息在手机端的横向溢出；中文化项目说明和更新日志；更新方式统一给出拉取新构建产物的明确提示 |
+
+上述改动均配套了 Go 单元/回归测试、路由注册测试和前端类型检查。提交前建议至少运行：
+
+```bash
+go test ./...
+go vet ./...
+cd web
+pnpm exec tsc --noEmit
+pnpm lint
+pnpm build
+```
+
 ## Highlights
 
 ### Unified model APIs
