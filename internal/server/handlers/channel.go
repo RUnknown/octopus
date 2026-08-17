@@ -51,6 +51,10 @@ func init() {
 		AddRoute(
 			router.NewRoute("/test-image", http.MethodPost).
 				Handle(testChannelImage),
+		).
+		AddRoute(
+			router.NewRoute("/test-sub2api-balance", http.MethodPost).
+				Handle(testChannelSub2APIBalance),
 		)
 	router.NewGroupRouter("/api/v1/channel").
 		Use(middleware.Auth()).
@@ -245,6 +249,37 @@ func testChannelImage(c *gin.Context) {
 		usedKey.LastUseTimeStamp = time.Now().Unix()
 		if err := op.ChannelKeyUpdate(usedKey); err != nil {
 			log.Warnf("failed to update image test key status: %v", err)
+		}
+	}
+	if testErr != nil {
+		resp.Error(c, http.StatusBadGateway, testErr.Error())
+		return
+	}
+	resp.Success(c, result)
+}
+
+func testChannelSub2APIBalance(c *gin.Context) {
+	var request relay.Sub2APIBalanceTestRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		resp.InvalidJSON(c)
+		return
+	}
+	if err := request.Validate(); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	channel, err := op.ChannelGet(request.ChannelID, c.Request.Context())
+	if err != nil {
+		resp.Error(c, http.StatusNotFound, "channel not found")
+		return
+	}
+
+	result, usedKey, testErr := relay.RunSub2APIBalanceTest(c.Request.Context(), channel, request)
+	if usedKey.ID > 0 && result != nil {
+		usedKey.StatusCode = result.StatusCode
+		usedKey.LastUseTimeStamp = time.Now().Unix()
+		if err := op.ChannelKeyUpdate(usedKey); err != nil {
+			log.Warnf("failed to update Sub2API balance test key status: %v", err)
 		}
 	}
 	if testErr != nil {

@@ -979,6 +979,26 @@
                 "missingImage": "回應中沒有可顯示的圖片",
                 "noImages": "請求成功，但回應中沒有圖片資料。"
             },
+            "sub2apiBalance": {
+                "action": "查詢 Sub2API 餘額",
+                "hide": "收合餘額查詢",
+                "title": "Sub2API 餘額查詢",
+                "description": "由服務端使用所選渠道金鑰請求 /v1/usage，不在查詢請求中回傳完整金鑰，也不計入業務請求統計。",
+                "key": "金鑰",
+                "keyPlaceholder": "選擇金鑰",
+                "query": "查詢餘額",
+                "querying": "查詢中...",
+                "remaining": "剩餘額度",
+                "plan": "方案",
+                "mode": "模式",
+                "limit": "總額度",
+                "used": "已使用",
+                "status": "狀態碼 {status}",
+                "duration": "耗時 {duration} ms",
+                "usedKey": "Key #{key}",
+                "valid": "金鑰有效",
+                "invalid": "金鑰不可用"
+            },
             "actions": {
                 "edit": "編輯",
                 "cancel": "取消",
