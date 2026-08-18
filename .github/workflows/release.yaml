@@ -237,8 +237,8 @@ jobs:
           push: true
           platforms: linux/amd64,linux/386,linux/arm64,linux/arm/v7
           tags: |
-            ghcr.io/${REPO_LC}:latest-alpine
-            ghcr.io/${REPO_LC}:${{ env.RELEASE_TAG }}-alpine
+            ghcr.io/${{ env.REPO_LC }}:latest-alpine
+            ghcr.io/${{ env.REPO_LC }}:${{ env.RELEASE_TAG }}-alpine
           provenance: false
 
       - name: Build and push Debian image
@@ -249,6 +249,6 @@ jobs:
           push: true
           platforms: linux/amd64,linux/386,linux/arm64,linux/arm/v7
           tags: |
-            ghcr.io/${REPO_LC}:latest
-            ghcr.io/${REPO_LC}:${{ env.RELEASE_TAG }}
+            ghcr.io/${{ env.REPO_LC }}:latest
+            ghcr.io/${{ env.REPO_LC }}:${{ env.RELEASE_TAG }}
           provenance: false
