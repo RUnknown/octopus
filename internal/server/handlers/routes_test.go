@@ -16,12 +16,13 @@ func TestRegisterHandlerRoutes(t *testing.T) {
 	}
 
 	expected := map[string]bool{
-		http.MethodDelete + " /api/v1/runtime/clear":      false,
-		http.MethodPost + " /api/v1/channel/test-image":   false,
-		http.MethodPost + " /v1/codex/responses":          false,
-		http.MethodGet + " /v1/codex/responses":           false,
-		http.MethodPost + " /backend-api/codex/responses": false,
-		http.MethodGet + " /backend-api/codex/responses":  false,
+		http.MethodDelete + " /api/v1/runtime/clear":              false,
+		http.MethodPost + " /api/v1/channel/test-image":           false,
+		http.MethodPost + " /api/v1/channel/test-sub2api-balance": false,
+		http.MethodPost + " /v1/codex/responses":                  false,
+		http.MethodGet + " /v1/codex/responses":                   false,
+		http.MethodPost + " /backend-api/codex/responses":         false,
+		http.MethodGet + " /backend-api/codex/responses":          false,
 	}
 	for _, route := range engine.Routes() {
 		key := route.Method + " " + route.Path

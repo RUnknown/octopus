@@ -979,6 +979,26 @@
                 "missingImage": "No displayable image was returned",
                 "noImages": "The request succeeded but returned no image data."
             },
+            "sub2apiBalance": {
+                "action": "Query Sub2API balance",
+                "hide": "Hide balance query",
+                "title": "Sub2API balance query",
+                "description": "The server requests /v1/usage with the selected channel key. The browser sends only channel and key IDs, and the query is excluded from business statistics.",
+                "key": "Key",
+                "keyPlaceholder": "Select a key",
+                "query": "Query balance",
+                "querying": "Querying...",
+                "remaining": "Remaining balance",
+                "plan": "Plan",
+                "mode": "Mode",
+                "limit": "Limit",
+                "used": "Used",
+                "status": "Status {status}",
+                "duration": "Duration {duration} ms",
+                "usedKey": "Key #{key}",
+                "valid": "Key valid",
+                "invalid": "Key unavailable"
+            },
             "actions": {
                 "edit": "Edit",
                 "cancel": "Cancel",

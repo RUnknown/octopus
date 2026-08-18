@@ -77,7 +77,7 @@ func RunImageGenerationTest(ctx context.Context, channel *dbmodel.Channel, reque
 		return nil, dbmodel.ChannelKey{}, err
 	}
 
-	usedKey := selectImageTestKey(channel, request.KeyID)
+	usedKey := selectChannelTestKey(channel, request.KeyID)
 	if usedKey.ChannelKey == "" {
 		if request.KeyID > 0 {
 			return nil, dbmodel.ChannelKey{}, fmt.Errorf("selected channel key is unavailable")
@@ -147,7 +147,7 @@ func RunImageGenerationTest(ctx context.Context, channel *dbmodel.Channel, reque
 		Body:        append(json.RawMessage(nil), responseBody...),
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return result, usedKey, fmt.Errorf("upstream image test failed with status %d: %s", response.StatusCode, truncateImageTestError(responseBody))
+		return result, usedKey, fmt.Errorf("upstream image test failed with status %d: %s", response.StatusCode, truncateChannelTestError(responseBody))
 	}
 	if len(responseBody) == 0 || !json.Valid(responseBody) {
 		return result, usedKey, fmt.Errorf("upstream image test returned invalid JSON")
@@ -155,7 +155,7 @@ func RunImageGenerationTest(ctx context.Context, channel *dbmodel.Channel, reque
 	return result, usedKey, nil
 }
 
-func selectImageTestKey(channel *dbmodel.Channel, keyID int) dbmodel.ChannelKey {
+func selectChannelTestKey(channel *dbmodel.Channel, keyID int) dbmodel.ChannelKey {
 	if channel == nil {
 		return dbmodel.ChannelKey{}
 	}
@@ -170,7 +170,7 @@ func selectImageTestKey(channel *dbmodel.Channel, keyID int) dbmodel.ChannelKey 
 	return dbmodel.ChannelKey{}
 }
 
-func truncateImageTestError(body []byte) string {
+func truncateChannelTestError(body []byte) string {
 	const maxErrorBytes = 16 * 1024
 	if len(body) <= maxErrorBytes {
 		return strings.TrimSpace(string(body))

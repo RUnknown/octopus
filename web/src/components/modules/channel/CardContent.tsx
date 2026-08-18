@@ -10,7 +10,8 @@ import {
     TrendingUp,
     Globe,
     ImageIcon,
-    Key
+    Key,
+    WalletCards
 } from 'lucide-react';
 import { ChannelType, useUpdateChannel, useDeleteChannel, type Channel, type UpdateChannelRequest } from '@/api/endpoints/channel';
 import {
@@ -30,6 +31,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useJumpStore } from '@/stores/jump';
 import { ImageTestPanel } from './ImageTestPanel';
+import { Sub2APIBalancePanel } from './Sub2APIBalancePanel';
 
 export function CardContent({ channel, stats }: { channel: Channel; stats: StatsMetricsFormatted }) {
     const { setIsOpen } = useMorphingDialog();
@@ -39,6 +41,7 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
     const [isEditing, setIsEditing] = useState(false);
     const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
     const [showImageTest, setShowImageTest] = useState(false);
+    const [showSub2APIBalance, setShowSub2APIBalance] = useState(false);
     const [formData, setFormData] = useState<ChannelFormData>({
         name: channel.name,
         type: channel.type,
@@ -486,6 +489,18 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
                                     </dd>
                                 </dl>
                             </div>
+
+                            {showSub2APIBalance ? <Sub2APIBalancePanel channel={channel} /> : null}
+
+                            <Button
+                                type="button"
+                                onClick={() => setShowSub2APIBalance((current) => !current)}
+                                variant="outline"
+                                className="mt-3 w-full rounded-2xl h-12"
+                            >
+                                <WalletCards className="size-4" />
+                                {showSub2APIBalance ? t('sub2apiBalance.hide') : t('sub2apiBalance.action')}
+                            </Button>
 
                             {showImageTest ? <ImageTestPanel channel={channel} /> : null}
 
