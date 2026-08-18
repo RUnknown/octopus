@@ -1,4 +1,4 @@
-name: Release (Windows)
+name: Release
 
 on:
   push:
@@ -16,6 +16,7 @@ env:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   release:
@@ -117,6 +118,8 @@ jobs:
             echo "## 下载"
             echo
             echo "- Windows (amd64)：\`octopus-windows-x86_64.zip\`"
+            echo "- Docker (Debian)：\`ghcr.io/${{ github.repository }}:${RELEASE_TAG}\`"
+            echo "- Docker (Alpine)：\`ghcr.io/${{ github.repository }}:${RELEASE_TAG}-alpine\`"
           } > release-notes.md
 
       - name: Create GitHub Release
@@ -128,3 +131,112 @@ jobs:
           prerelease: false
           tag_name: ${{ env.RELEASE_TAG }}
           body_path: release-notes.md
+
+  docker:
+    name: release docker (multi-arch)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Validate release tag
+        shell: bash
+        run: |
+          case "${RELEASE_TAG}" in
+            v*) ;;
+            *) echo "发布标签必须以 v 开头：${RELEASE_TAG}" >&2; exit 1 ;;
+          esac
+          git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}"
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      # 前端资源由 //go:embed all:out 在编译时打入二进制，
+      # 但 .gitignore 忽略了 static/out/*，CI 干净 checkout 后该目录为空，
+      # 必须先 pnpm build 生成 web/out 并移动到 static/out，否则网页空白。
+      - name: Build frontend
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          NEXT_PUBLIC_APP_VERSION="${RELEASE_TAG}" \
+          NEXT_PUBLIC_GITHUB_REPO="https://github.com/${{ github.repository }}" \
+          pnpm build
+
+      - name: Embed frontend into static
+        run: |
+          rm -rf static/out
+          mv web/out static/out
+
+      # 构建 Docker 所需的 Linux 二进制（4 平台），供两个 Dockerfile COPY 使用。
+      # .gitignore 忽略 build 目录，但此处与 COPY 处于同一 job，先构建后 COPY 不受影响。
+      - name: Build Linux binaries for Docker
+        run: |
+          set -e
+          mkdir -p build/docker/linux/amd64 build/docker/linux/386 build/docker/linux/arm64 build/docker/linux/arm/v7
+          BUILD_TIME="$(TZ='Asia/Shanghai' date +'%F %T %z')"
+          COMMIT_ID="$(git rev-parse --short HEAD)"
+          LDFLAGS="-X 'github.com/bestruirui/octopus/internal/conf.Version=${RELEASE_TAG}' \
+                   -X 'github.com/bestruirui/octopus/internal/conf.BuildTime=${BUILD_TIME}' \
+                   -X 'github.com/bestruirui/octopus/internal/conf.Author=${{ github.repository_owner }}' \
+                   -X 'github.com/bestruirui/octopus/internal/conf.Commit=${COMMIT_ID}' \
+                   -X 'github.com/bestruirui/octopus/internal/conf.Repo=https://github.com/${{ github.repository }}' \
+                   -s -w"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags=jsoniter -ldflags="${LDFLAGS}" -o build/docker/linux/amd64/octopus .
+          CGO_ENABLED=0 GOOS=linux GOARCH=386 go build -tags=jsoniter -ldflags="${LDFLAGS}" -o build/docker/linux/386/octopus .
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -tags=jsoniter -ldflags="${LDFLAGS}" -o build/docker/linux/arm64/octopus .
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -tags=jsoniter -ldflags="${LDFLAGS}" -o build/docker/linux/arm/v7/octopus .
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Alpine image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: scripts/dockerfiles/Dockerfile.alpine
+          push: true
+          platforms: linux/amd64,linux/386,linux/arm64,linux/arm/v7
+          tags: |
+            ghcr.io/${{ github.repository }}:latest-alpine
+            ghcr.io/${{ github.repository }}:${{ env.RELEASE_TAG }}-alpine
+          provenance: false
+
+      - name: Build and push Debian image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: scripts/dockerfiles/Dockerfile.debian
+          push: true
+          platforms: linux/amd64,linux/386,linux/arm64,linux/arm/v7
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ env.RELEASE_TAG }}
+          provenance: false

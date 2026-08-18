@@ -103,7 +103,7 @@ docker run -d \
   -p 8080:8080 \
   -v /path/to/data:/app/data \
   --restart unless-stopped \
-  ghcr.io/mingtian886/octopus:latest
+  ghcr.io/RUnknown/octopus:latest
 ```
 
 也可以修改 [`docker-compose.yml`](docker-compose.yml) 中的数据目录后运行：
@@ -112,14 +112,14 @@ docker run -d \
 docker compose up -d
 ```
 
-每个版本都会同时发布 `latest`、版本标签和 Alpine 变体；需要固定版本时使用 `ghcr.io/mingtian886/octopus:vX.Y.Z`。
+每个版本都会同时发布 `latest`、版本标签和 Alpine 变体；需要固定版本时使用 `ghcr.io/RUnknown/octopus:vX.Y.Z`。
 
 ### Run from source
 
 Requirements: Go 1.25, Node.js 22+, and pnpm.
 
 ```bash
-git clone https://github.com/mingtian886/octopus.git
+git clone https://github.com/RUnknown/octopus.git
 cd octopus
 
 cd web
