@@ -118,8 +118,8 @@ jobs:
             echo "## 下载"
             echo
             echo "- Windows (amd64)：\`octopus-windows-x86_64.zip\`"
-            echo "- Docker (Debian)：\`ghcr.io/${{ github.repository }}:${RELEASE_TAG}\`"
-            echo "- Docker (Alpine)：\`ghcr.io/${{ github.repository }}:${RELEASE_TAG}-alpine\`"
+            echo "- Docker (Debian)：\`ghcr.io/${{ downcase(github.repository) }}:${RELEASE_TAG}\`"
+            echo "- Docker (Alpine)：\`ghcr.io/${{ downcase(github.repository) }}:${RELEASE_TAG}-alpine\`"
           } > release-notes.md
 
       - name: Create GitHub Release
@@ -225,8 +225,8 @@ jobs:
           push: true
           platforms: linux/amd64,linux/386,linux/arm64,linux/arm/v7
           tags: |
-            ghcr.io/${{ github.repository }}:latest-alpine
-            ghcr.io/${{ github.repository }}:${{ env.RELEASE_TAG }}-alpine
+            ghcr.io/${{ downcase(github.repository) }}:latest-alpine
+            ghcr.io/${{ downcase(github.repository) }}:${{ env.RELEASE_TAG }}-alpine
           provenance: false
 
       - name: Build and push Debian image
@@ -237,6 +237,6 @@ jobs:
           push: true
           platforms: linux/amd64,linux/386,linux/arm64,linux/arm/v7
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ env.RELEASE_TAG }}
+            ghcr.io/${{ downcase(github.repository) }}:latest
+            ghcr.io/${{ downcase(github.repository) }}:${{ env.RELEASE_TAG }}
           provenance: false

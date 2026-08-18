@@ -103,7 +103,7 @@ docker run -d \
   -p 8080:8080 \
   -v /path/to/data:/app/data \
   --restart unless-stopped \
-  ghcr.io/RUnknown/octopus:latest
+  ghcr.io/runknown/octopus:latest
 ```
 
 也可以修改 [`docker-compose.yml`](docker-compose.yml) 中的数据目录后运行：
@@ -112,7 +112,7 @@ docker run -d \
 docker compose up -d
 ```
 
-每个版本都会同时发布 `latest`、版本标签和 Alpine 变体；需要固定版本时使用 `ghcr.io/RUnknown/octopus:vX.Y.Z`。
+每个版本都会同时发布 `latest`、版本标签和 Alpine 变体；需要固定版本时使用 `ghcr.io/runknown/octopus:vX.Y.Z`。
 
 ### Run from source
 
